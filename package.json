@@ -1,0 +1,10 @@
+{
+  "name": "obs-bible-companion",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["project-a", "project-b"],
+  "scripts": {
+    "test": "npm run test --workspaces"
+  },
+  "engines": { "node": ">=20.0.0" }
+}
