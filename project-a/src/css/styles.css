@@ -1,0 +1,256 @@
+/* OBS Bible Companion — Stylesheet
+   Two contexts:
+   1. index.html  — Plugin UI (OBS Custom Browser Dock)
+   2. browser_source.html — Verse display overlay (OBS Browser Source)
+   Variables and base reset are shared; page-specific sections are labelled.
+*/
+
+/* ── Design Tokens ─────────────────────────────────────────────────────── */
+:root {
+  --color-bg:          #0f1117;
+  --color-surface:     #1a1d27;
+  --color-surface-2:   #252836;
+  --color-border:      #2e3147;
+  --color-accent:      #6c8aff;
+  --color-accent-dim:  #3a4a99;
+  --color-text:        #e8eaf6;
+  --color-text-dim:    #8f96b3;
+  --color-success:     #4caf7d;
+  --color-error:       #e05c6a;
+
+  --font-ui:           'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-display:      Georgia, 'Times New Roman', serif;
+
+  --radius:            6px;
+  --radius-lg:         12px;
+  --transition:        150ms ease;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; -webkit-text-size-adjust: 100%; }
+body { font-family: var(--font-ui); background: var(--color-bg); color: var(--color-text); }
+
+/* ── Plugin UI (index.html) ─────────────────────────────────────────────── */
+.plugin-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.plugin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.plugin-header h1 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text);
+}
+
+.bridge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: var(--color-text-dim);
+}
+
+.bridge-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-error);
+  transition: background var(--transition);
+}
+
+.bridge-status--connected .bridge-status__dot { background: var(--color-success); }
+.bridge-status--connected .bridge-status__label { color: var(--color-success); }
+
+/* Search area */
+.search-area {
+  padding: 10px 14px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.search-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 7px 10px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color var(--transition);
+}
+
+.search-input:focus { border-color: var(--color-accent); }
+.search-input::placeholder { color: var(--color-text-dim); }
+
+.btn {
+  padding: 7px 12px;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: opacity var(--transition), background var(--transition);
+}
+
+.btn:active { opacity: 0.8; }
+
+.btn--primary { background: var(--color-accent); color: #fff; }
+.btn--ghost   { background: var(--color-surface-2); color: var(--color-text-dim); border: 1px solid var(--color-border); }
+.btn--icon    { padding: 7px 9px; font-size: 1rem; }
+
+/* Translation selector */
+.translation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.translation-label {
+  font-size: 0.75rem;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.translation-select {
+  padding: 4px 8px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  outline: none;
+}
+
+/* Results list */
+.results-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.results-area::-webkit-scrollbar { width: 4px; }
+.results-area::-webkit-scrollbar-track { background: transparent; }
+.results-area::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }
+
+.result-item {
+  padding: 8px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-border);
+  transition: background var(--transition);
+}
+
+.result-item:hover { background: var(--color-surface-2); }
+.result-item:last-child { border-bottom: none; }
+
+.result-item__ref {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  margin-bottom: 2px;
+}
+
+.result-item__text {
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.results-empty {
+  padding: 24px 14px;
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: 0.8rem;
+}
+
+/* Overlay controls in plugin UI */
+.overlay-controls {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.overlay-controls .btn { flex: 1; }
+
+/* ── Browser Source Display (browser_source.html) ──────────────────────── */
+.display-root {
+  width: 100vw;
+  height: 100vh;
+  display: none;              /* shown via BroadcastChannel */
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 5vw 8vh;
+  background: transparent;
+}
+
+.verse-card {
+  max-width: 900px;
+  width: 100%;
+  background: rgba(10, 12, 20, 0.88);
+  border: 1px solid rgba(108, 138, 255, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 28px 36px;
+  backdrop-filter: blur(8px);
+  animation: fadeSlideIn 0.35s ease both;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.verse-card__text {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 3.5vw, 2rem);
+  line-height: 1.55;
+  color: #f0f2ff;
+  margin-bottom: 14px;
+}
+
+.verse-card__ref {
+  font-family: var(--font-ui);
+  font-size: clamp(0.75rem, 1.5vw, 0.95rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--color-accent);
+  text-transform: uppercase;
+}
+
+/* Utility */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

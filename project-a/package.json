@@ -1,13 +1,12 @@
 {
   "name": "obs-bible-plugin",
   "version": "1.0.0",
-  "private": true,
+  "description": "Rewritten OBS Bible Plugin — Project A",
+  "type": "module",
   "scripts": {
-    "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --config jest.config.js --coverage"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.12",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0"
   }

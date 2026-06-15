@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Operator: change this port if 8765 is already in use on your machine -->
+  <meta name="obs-bible-port" content="8765">
+  <title>OBS Bible</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="plugin-root">
+
+    <!-- Header -->
+    <header class="plugin-header">
+      <h1>OBS Bible</h1>
+      <span class="bridge-status" id="bridgeStatus">
+        <span class="bridge-status__dot"></span>
+        <span class="bridge-status__label">Disconnected</span>
+      </span>
+    </header>
+
+    <!-- Search -->
+    <div class="search-area">
+      <div class="search-row">
+        <input
+          type="search"
+          id="searchInput"
+          class="search-input"
+          placeholder="Search by reference or text…"
+          aria-label="Search Bible"
+          autocomplete="off"
+        >
+        <button class="btn btn--primary" id="searchBtn" aria-label="Search">Search</button>
+        <button class="btn btn--ghost btn--icon" id="clearBtn" aria-label="Clear search" title="Clear">✕</button>
+      </div>
+
+      <div class="translation-row">
+        <span class="translation-label">Translation:</span>
+        <select class="translation-select" id="translationSelect" aria-label="Select Bible translation">
+          <option value="KJV">KJV</option>
+          <option value="NIV">NIV</option>
+          <option value="NKJV">NKJV</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-area" id="resultsArea" role="list" aria-label="Search results">
+      <div class="results-empty" id="resultsEmpty">Search for a verse or passage above.</div>
+    </div>
+
+    <!-- Overlay controls -->
+    <div class="overlay-controls">
+      <button class="btn btn--ghost" id="showBtn">Show</button>
+      <button class="btn btn--ghost" id="hideBtn">Hide</button>
+      <button class="btn btn--ghost" id="prevBtn">◀ Prev</button>
+      <button class="btn btn--ghost" id="nextBtn">Next ▶</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { searchBible, findVerseIndexByReference } from './js/search.js'
+    import { loadTranslation, initTranslation, getBibleData, getAvailableTranslations } from './js/translation.js'
+    import { registerWindowAPI, sendMessage, setDisplayChannel } from './js/display.js'
+    import { showOverlay, hideOverlay, toggleOverlay } from './js/overlay.js'
+
+    // ── Initialise window state ────────────────────────────────────────────
+    window.__currentReference = ''
+    window.__currentVerseIndex = -1
+    window.__overlayVisible = false
+
+    // ── Register the programmatic window API ───────────────────────────────
+    registerWindowAPI()
+
+    // ── DOM refs ───────────────────────────────────────────────────────────
+    const searchInput      = document.getElementById('searchInput')
+    const searchBtn        = document.getElementById('searchBtn')
+    const clearBtn         = document.getElementById('clearBtn')
+    const translationSelect = document.getElementById('translationSelect')
+    const resultsArea      = document.getElementById('resultsArea')
+    const resultsEmpty     = document.getElementById('resultsEmpty')
+    const showBtn          = document.getElementById('showBtn')
+    const hideBtn          = document.getElementById('hideBtn')
+    const prevBtn          = document.getElementById('prevBtn')
+    const nextBtn          = document.getElementById('nextBtn')
+    const bridgeStatus     = document.getElementById('bridgeStatus')
+
+    // ── Translation init ───────────────────────────────────────────────────
+    await initTranslation('KJV', './bible_data/')
+
+    // Sync selector to stored translation
+    const storedTrans = localStorage.getItem('obs_bible_translation') ?? 'KJV'
+    translationSelect.value = storedTrans
+
+    // ── Search UI ──────────────────────────────────────────────────────────
+    function renderResults(results) {
+      resultsArea.innerHTML = ''
+
+      if (results.length === 0) {
+        resultsEmpty.textContent = 'No results found.'
+        resultsArea.appendChild(resultsEmpty)
+        return
+      }
+
+      results.forEach((entry) => {
+        const item = document.createElement('div')
+        item.className = 'result-item'
+        item.setAttribute('role', 'listitem')
+        item.setAttribute('tabindex', '0')
+
+        item.innerHTML = `
+          <div class="result-item__ref">${entry.name}</div>
+          <div class="result-item__text">${entry.verse}</div>
+        `
+
+        const displayEntry = () => {
+          window.__currentVerseIndex = entry.__index
+          window.__currentReference = entry.name
+          sendMessage({ name: entry.name, verse: entry.verse, ari: entry.ari })
+        }
+
+        item.addEventListener('click', displayEntry)
+        item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') displayEntry() })
+
+        resultsArea.appendChild(item)
+      })
+    }
+
+    function doSearch() {
+      const query = searchInput.value.trim()
+      if (!query) {
+        resultsArea.innerHTML = ''
+        resultsEmpty.textContent = 'Search for a verse or passage above.'
+        resultsArea.appendChild(resultsEmpty)
+        return
+      }
+      const results = searchBible(query, getBibleData())
+      renderResults(results)
+    }
+
+    searchBtn.addEventListener('click', doSearch)
+    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch() })
+    clearBtn.addEventListener('click', () => {
+      searchInput.value = ''
+      resultsArea.innerHTML = ''
+      resultsEmpty.textContent = 'Search for a verse or passage above.'
+      resultsArea.appendChild(resultsEmpty)
+    })
+
+    // ── Translation change ─────────────────────────────────────────────────
+    translationSelect.addEventListener('change', async () => {
+      const name = translationSelect.value
+      await loadTranslation(name, './bible_data/')
+      // Re-display current verse in new translation if one is active
+      if (window.__currentVerseIndex !== -1) {
+        const data = getBibleData()
+        const v = data[window.__currentVerseIndex]
+        if (v) {
+          window.__currentReference = v.name
+          sendMessage(v)
+        }
+      }
+    })
+
+    // ── Overlay controls ───────────────────────────────────────────────────
+    showBtn.addEventListener('click', () => window.showOverlay())
+    hideBtn.addEventListener('click', () => window.hideOverlay())
+    prevBtn.addEventListener('click', () => window.previousVerse())
+    nextBtn.addEventListener('click', () => window.nextVerse())
+
+    // ── Bridge status indicator ────────────────────────────────────────────
+    // companion_bridge.js updates this via CustomEvent dispatched on window
+    window.addEventListener('obs-bible-bridge-status', (e) => {
+      if (e.detail?.connected) {
+        bridgeStatus.classList.add('bridge-status--connected')
+        bridgeStatus.querySelector('.bridge-status__label').textContent = 'Bridge connected'
+      } else {
+        bridgeStatus.classList.remove('bridge-status--connected')
+        bridgeStatus.querySelector('.bridge-status__label').textContent = 'Disconnected'
+      }
+    })
+  </script>
+
+  <!-- Bridge must load AFTER all other module scripts so window API is registered -->
+  <script src="./js/companion_bridge.js"></script>
+</body>
+</html>

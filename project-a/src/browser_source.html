@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OBS Bible — Display</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    /* Ensure fully transparent background for OBS chroma/alpha key */
+    body {
+      background: transparent !important;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div class="display-root" id="displayRoot">
+    <div class="verse-card" id="verseCard">
+      <div class="verse-card__text" id="verseText"></div>
+      <div class="verse-card__ref"  id="verseRef"></div>
+    </div>
+  </div>
+
+  <script>
+    'use strict'
+
+    const displayRoot = document.getElementById('displayRoot')
+    const verseText   = document.getElementById('verseText')
+    const verseRef    = document.getElementById('verseRef')
+
+    // ── Verse display channel ────────────────────────────────────────────
+    const displayChannel = new BroadcastChannel('myChannel')
+
+    displayChannel.addEventListener('message', (event) => {
+      const data = event.data
+      if (!data || typeof data.verse !== 'string') return
+
+      verseText.textContent = data.verse
+      verseRef.textContent  = data.name ?? ''
+
+      // Trigger re-animation by removing and re-adding the element
+      const card = document.getElementById('verseCard')
+      card.style.animation = 'none'
+      // Force reflow
+      void card.offsetWidth
+      card.style.animation = ''
+    })
+
+    // ── Overlay visibility channel ───────────────────────────────────────
+    const animChannel = new BroadcastChannel('obs-bible-animation')
+
+    animChannel.addEventListener('message', (event) => {
+      const data = event.data
+      if (!data || typeof data.display !== 'string') return
+
+      displayRoot.style.display = data.display
+    })
+  </script>
+</body>
+</html>
