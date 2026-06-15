@@ -6,7 +6,6 @@
   <title>OBS Bible — Display</title>
   <link rel="stylesheet" href="css/styles.css">
   <style>
-    /* Ensure fully transparent background for OBS chroma/alpha key */
     body {
       background: transparent !important;
       margin: 0;
@@ -26,35 +25,29 @@
   <script>
     'use strict'
 
-    const displayRoot = document.getElementById('displayRoot')
-    const verseText   = document.getElementById('verseText')
-    const verseRef    = document.getElementById('verseRef')
+    var displayRoot = document.getElementById('displayRoot')
+    var verseText   = document.getElementById('verseText')
+    var verseRef    = document.getElementById('verseRef')
+    var verseCard   = document.getElementById('verseCard')
 
-    // ── Verse display channel ────────────────────────────────────────────
-    const displayChannel = new BroadcastChannel('myChannel')
+    // Unique channel names — avoids collision with the original OBS Bible plugin
+    // which uses 'myChannel' and 'obs-bible-animation'
+    var displayChannel = new BroadcastChannel('obs-bible-companion-display')
+    var animChannel    = new BroadcastChannel('obs-bible-companion-anim')
 
-    displayChannel.addEventListener('message', (event) => {
-      const data = event.data
+    displayChannel.addEventListener('message', function (event) {
+      var data = event.data
       if (!data || typeof data.verse !== 'string') return
-
       verseText.textContent = data.verse
-      verseRef.textContent  = data.name ?? ''
-
-      // Trigger re-animation by removing and re-adding the element
-      const card = document.getElementById('verseCard')
-      card.style.animation = 'none'
-      // Force reflow
-      void card.offsetWidth
-      card.style.animation = ''
+      verseRef.textContent  = data.name || ''
+      verseCard.style.animation = 'none'
+      void verseCard.offsetWidth
+      verseCard.style.animation = ''
     })
 
-    // ── Overlay visibility channel ───────────────────────────────────────
-    const animChannel = new BroadcastChannel('obs-bible-animation')
-
-    animChannel.addEventListener('message', (event) => {
-      const data = event.data
+    animChannel.addEventListener('message', function (event) {
+      var data = event.data
       if (!data || typeof data.display !== 'string') return
-
       displayRoot.style.display = data.display
     })
   </script>

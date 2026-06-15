@@ -4,8 +4,9 @@
   "description": "Rewritten OBS Bible Plugin — Project A",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --config jest.config.js --coverage"
-  },
+  "build": "node scripts/build-html.cjs",
+  "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --config jest.config.js --coverage"
+},
   "devDependencies": {
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0"

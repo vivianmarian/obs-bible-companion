@@ -3,7 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Operator: change this port if 8765 is already in use on your machine -->
   <meta name="obs-bible-port" content="8765">
   <title>OBS Bible</title>
   <link rel="stylesheet" href="css/styles.css">
@@ -11,7 +10,6 @@
 <body>
   <div class="plugin-root">
 
-    <!-- Header -->
     <header class="plugin-header">
       <h1>OBS Bible</h1>
       <span class="bridge-status" id="bridgeStatus">
@@ -20,7 +18,6 @@
       </span>
     </header>
 
-    <!-- Search -->
     <div class="search-area">
       <div class="search-row">
         <input
@@ -31,26 +28,20 @@
           aria-label="Search Bible"
           autocomplete="off"
         >
-        <button class="btn btn--primary" id="searchBtn" aria-label="Search">Search</button>
-        <button class="btn btn--ghost btn--icon" id="clearBtn" aria-label="Clear search" title="Clear">✕</button>
+        <button class="btn btn--primary" id="searchBtn">Search</button>
+        <button class="btn btn--ghost btn--icon" id="clearBtn" title="Clear">✕</button>
       </div>
-
       <div class="translation-row">
         <span class="translation-label">Translation:</span>
-        <select class="translation-select" id="translationSelect" aria-label="Select Bible translation">
-          <option value="KJV">KJV</option>
-          <option value="NIV">NIV</option>
-          <option value="NKJV">NKJV</option>
+        <select class="translation-select" id="translationSelect" id="translationSelect">
         </select>
       </div>
     </div>
 
-    <!-- Results -->
-    <div class="results-area" id="resultsArea" role="list" aria-label="Search results">
+    <div class="results-area" id="resultsArea" role="list">
       <div class="results-empty" id="resultsEmpty">Search for a verse or passage above.</div>
     </div>
 
-    <!-- Overlay controls -->
     <div class="overlay-controls">
       <button class="btn btn--ghost" id="showBtn">Show</button>
       <button class="btn btn--ghost" id="hideBtn">Hide</button>
@@ -59,120 +50,197 @@
     </div>
   </div>
 
-  <script type="module">
-    import { searchBible, findVerseIndexByReference } from './js/search.js'
-    import { loadTranslation, initTranslation, getBibleData, getAvailableTranslations } from './js/translation.js'
-    import { registerWindowAPI, sendMessage, setDisplayChannel } from './js/display.js'
-    import { showOverlay, hideOverlay, toggleOverlay } from './js/overlay.js'
+  <script>
+    'use strict'
 
-    // ── Initialise window state ────────────────────────────────────────────
+    // ── Inlined Bible data (injected by scripts/build-html.js) ────────────
+    var BIBLE_TRANSLATIONS = {"KJV":[{"name":"Genesis 1:1","verse":"In the beginning God created the heaven and the earth.","ari":"1:1:1"},{"name":"Genesis 1:2","verse":"And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters.","ari":"1:1:2"},{"name":"Genesis 1:3","verse":"And God said, Let there be light: and there was light.","ari":"1:1:3"},{"name":"Genesis 1:4","verse":"And God saw the light, that it was good: and God divided the light from the darkness.","ari":"1:1:4"},{"name":"Genesis 1:5","verse":"And God called the light Day, and the darkness he called Night. And the evening and the morning were the first day.","ari":"1:1:5"},{"name":"Genesis 1:6","verse":"And God said, Let there be a firmament in the midst of the waters, and let it divide the waters from the waters.","ari":"1:1:6"},{"name":"Genesis 1:7","verse":"And God made the firmament, and divided the waters which were under the firmament from the waters which were above the firmament: and it was so.","ari":"1:1:7"},{"name":"Genesis 1:8","verse":"And God called the firmament Heaven. And the evening and the morning were the second day.","ari":"1:1:8"},{"name":"Genesis 1:9","verse":"And God said, Let the waters under the heaven be gathered together unto one place, and let the dry land appear: and it was so.","ari":"1:1:9"},{"name":"Genesis 1:10","verse":"And God called the dry land Earth; and the gathering together of the waters called he Seas: and God saw that it was good.","ari":"1:1:10"},{"name":"Genesis 1:11","verse":"And God said, Let the earth bring forth grass, the herb yielding seed, and the fruit tree yielding fruit after his kind, whose seed is in itself, upon the earth: and it was so.","ari":"1:1:11"},{"name":"Genesis 1:12","verse":"And the earth brought forth grass, and herb yielding seed after his kind, and the tree yielding fruit, whose seed was in itself, after his kind: and God saw that it was good.","ari":"1:1:12"},{"name":"Genesis 1:13","verse":"And the evening and the morning were the third day.","ari":"1:1:13"},{"name":"Genesis 1:14","verse":"And God said, Let there be lights in the firmament of the heaven to divide the day from the night; and let them be for signs, and for seasons, and for days, and years:","ari":"1:1:14"},{"name":"Genesis 1:15","verse":"And let them be for lights in the firmament of the heaven to give light upon the earth: and it was so.","ari":"1:1:15"},{"name":"Genesis 1:16","verse":"And God made two great lights; the greater light to rule the day, and the lesser light to rule the night: he made the stars also.","ari":"1:1:16"},{"name":"Genesis 1:17","verse":"And God set them in the firmament of the heaven to give light upon the earth,","ari":"1:1:17"},{"name":"Genesis 1:18","verse":"And to rule over the day and over the night, and to divide the light from the darkness: and God saw that it was good.","ari":"1:1:18"},{"name":"Genesis 1:19","verse":"And the evening and the morning were the fourth day.","ari":"1:1:19"},{"name":"Genesis 1:20","verse":"And God said, Let the waters bring forth abundantly the moving creature that hath life, and fowl that may fly above the earth in the open firmament of heaven.","ari":"1:1:20"},{"name":"Genesis 1:21","verse":"And God created great whales, and every living creature that moveth, which the waters brought forth abundantly, after their kind, and every winged fowl after his kind: and God saw that it was good.","ari":"1:1:21"},{"name":"Genesis 1:22","verse":"And God blessed them, saying, Be fruitful, and multiply, and fill the waters in the seas, and let fowl multiply in the earth.","ari":"1:1:22"},{"name":"Genesis 1:23","verse":"And the evening and the morning were the fifth day.","ari":"1:1:23"},{"name":"Genesis 1:24","verse":"And God said, Let the earth bring forth the living creature after his kind, cattle, and creeping thing, and beast of the earth after his kind: and it was so.","ari":"1:1:24"},{"name":"Genesis 1:25","verse":"And God made the beast of the earth after his kind, and cattle after their kind, and every thing that creepeth upon the earth after his kind: and God saw that it was good.","ari":"1:1:25"},{"name":"Genesis 1:26","verse":"And God said, Let us make man in our image, after our likeness: and let them have dominion over the fish of the sea, and over the fowl of the air, and over the cattle, and over all the earth, and over every creeping thing that creepeth upon the earth.","ari":"1:1:26"},{"name":"Genesis 1:27","verse":"So God created man in his own image, in the image of God created he him; male and female created he them.","ari":"1:1:27"},{"name":"Genesis 1:28","verse":"And God blessed them, and God said unto them, Be fruitful, and multiply, and replenish the earth, and subdue it: and have dominion over the fish of the sea, and over the fowl of the air, and over every living thing that moveth upon the earth.","ari":"1:1:28"},{"name":"Genesis 1:29","verse":"And God said, Behold, I have given you every herb bearing seed, which is upon the face of all the earth, and every tree, in the which is the fruit of a tree yielding seed; to you it shall be for meat.","ari":"1:1:29"},{"name":"Genesis 1:30","verse":"And to every beast of the earth, and to every fowl of the air, and to every thing that creepeth upon the earth, wherein there is life, I have given every green herb for meat: and it was so.","ari":"1:1:30"},{"name":"Genesis 1:31","verse":"And God saw every thing that he had made, and, behold, it was very good. And the evening and the morning were the sixth day.","ari":"1:1:31"},{"name":"John 3:1","verse":"There was a man of the Pharisees, named Nicodemus, a ruler of the Jews:","ari":"43:3:1"},{"name":"John 3:2","verse":"The same came to Jesus by night, and said unto him, Rabbi, we know that thou art a teacher come from God: for no man can do these miracles that thou doest, except God be with him.","ari":"43:3:2"},{"name":"John 3:3","verse":"Jesus answered and said unto him, Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God.","ari":"43:3:3"},{"name":"John 3:4","verse":"Nicodemus saith unto him, How can a man be born when he is old? can he enter the second time into his mother's womb, and be born?","ari":"43:3:4"},{"name":"John 3:5","verse":"Jesus answered, Verily, verily, I say unto thee, Except a man be born of water and of the Spirit, he cannot enter into the kingdom of God.","ari":"43:3:5"},{"name":"John 3:6","verse":"That which is born of the flesh is flesh; and that which is born of the Spirit is spirit.","ari":"43:3:6"},{"name":"John 3:7","verse":"Marvel not that I said unto thee, Ye must be born again.","ari":"43:3:7"},{"name":"John 3:8","verse":"The wind bloweth where it listeth, and thou hearest the sound thereof, but canst not tell whence it cometh, and whither it goeth: so is every one that is born of the Spirit.","ari":"43:3:8"},{"name":"John 3:9","verse":"Nicodemus answered and said unto him, How can these things be?","ari":"43:3:9"},{"name":"John 3:10","verse":"Jesus answered and said unto him, Art thou a master of Israel, and knowest not these things?","ari":"43:3:10"},{"name":"John 3:11","verse":"Verily, verily, I say unto thee, We speak that we do know, and testify that we have seen; and ye receive not our witness.","ari":"43:3:11"},{"name":"John 3:12","verse":"If I have told you earthly things, and ye believe not, how shall ye believe, if I tell you of heavenly things?","ari":"43:3:12"},{"name":"John 3:13","verse":"And no man hath ascended up to heaven, but he that came down from heaven, even the Son of man which is in heaven.","ari":"43:3:13"},{"name":"John 3:14","verse":"And as Moses lifted up the serpent in the wilderness, even so must the Son of man be lifted up:","ari":"43:3:14"},{"name":"John 3:15","verse":"That whosoever believeth in him should not perish, but have eternal life.","ari":"43:3:15"},{"name":"John 3:16","verse":"For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.","ari":"43:3:16"},{"name":"John 3:17","verse":"For God sent not his Son into the world to condemn the world; but that the world through him might be saved.","ari":"43:3:17"},{"name":"John 3:18","verse":"He that believeth on him is not condemned: but he that believeth not is condemned already, because he hath not believed in the name of the only begotten Son of God.","ari":"43:3:18"},{"name":"John 3:19","verse":"And this is the condemnation, that light is come into the world, and men loved darkness rather than light, because their deeds were evil.","ari":"43:3:19"},{"name":"John 3:20","verse":"For every one that doeth evil hateth the light, neither cometh to the light, lest his deeds should be reproved.","ari":"43:3:20"},{"name":"John 3:21","verse":"But he that doeth truth cometh to the light, that his deeds may be made manifest, that they are wrought in God.","ari":"43:3:21"},{"name":"John 3:22","verse":"After these things came Jesus and his disciples into the land of Judaea; and there he tarried with them, and baptized.","ari":"43:3:22"},{"name":"John 3:23","verse":"And John also was baptizing in Aenon near to Salim, because there was much water there: and they came, and were baptized.","ari":"43:3:23"},{"name":"John 3:24","verse":"For John was not yet cast into prison.","ari":"43:3:24"},{"name":"John 3:25","verse":"Then there arose a question between some of John's disciples and the Jews about purifying.","ari":"43:3:25"},{"name":"John 3:26","verse":"And they came unto John, and said unto him, Rabbi, he that was with thee beyond Jordan, to whom thou barest witness, behold, the same baptizeth, and all men come to him.","ari":"43:3:26"},{"name":"John 3:27","verse":"John answered and said, A man can receive nothing, except it be given him from heaven.","ari":"43:3:27"},{"name":"John 3:28","verse":"Ye yourselves bear me witness, that I said, I am not the Christ, but that I am sent before him.","ari":"43:3:28"},{"name":"John 3:29","verse":"He that hath the bride is the bridegroom: but the friend of the bridegroom, which standeth and heareth him, rejoiceth greatly because of the bridegroom's voice: this my joy therefore is fulfilled.","ari":"43:3:29"},{"name":"John 3:30","verse":"He must increase, but I must decrease.","ari":"43:3:30"},{"name":"John 3:31","verse":"He that cometh from above is above all: he that is of the earth is earthly, and speaketh of the earth: he that cometh from heaven is above all.","ari":"43:3:31"},{"name":"John 3:32","verse":"And what he hath seen and heard, that he testifieth; and no man receiveth his testimony.","ari":"43:3:32"},{"name":"John 3:33","verse":"He that hath received his testimony hath set to his seal that God is true.","ari":"43:3:33"},{"name":"John 3:34","verse":"For he whom God hath sent speaketh the words of God: for God giveth not the Spirit by measure unto him.","ari":"43:3:34"},{"name":"John 3:35","verse":"The Father loveth the Son, and hath given all things into his hand.","ari":"43:3:35"},{"name":"John 3:36","verse":"He that believeth on the Son hath everlasting life: and he that believeth not the Son shall not see life; but the wrath of God abideth on him.","ari":"43:3:36"},{"name":"Revelation 22:1","verse":"And he shewed me a pure river of water of life, clear as crystal, proceeding out of the throne of God and of the Lamb.","ari":"66:22:1"},{"name":"Revelation 22:2","verse":"In the midst of the street of it, and on either side of the river, was there the tree of life, which bare twelve manner of fruits, and yielded her fruit every month: and the leaves of the tree were for the healing of the nations.","ari":"66:22:2"},{"name":"Revelation 22:3","verse":"And there shall be no more curse: but the throne of God and of the Lamb shall be in it; and his servants shall serve him:","ari":"66:22:3"},{"name":"Revelation 22:4","verse":"And they shall see his face; and his name shall be in their foreheads.","ari":"66:22:4"},{"name":"Revelation 22:5","verse":"And there shall be no night there; and they need no candle, neither light of the sun; for the Lord God giveth them light: and they shall reign for ever and ever.","ari":"66:22:5"},{"name":"Revelation 22:6","verse":"And he said unto me, These sayings are faithful and true: and the Lord God of the holy prophets sent his angel to shew unto his servants the things which must shortly be done.","ari":"66:22:6"},{"name":"Revelation 22:7","verse":"Behold, I come quickly: blessed is he that keepeth the sayings of the prophecy of this book.","ari":"66:22:7"},{"name":"Revelation 22:8","verse":"And I John saw these things, and heard them. And when I had heard and seen, I fell down to worship before the feet of the angel which shewed me these things.","ari":"66:22:8"},{"name":"Revelation 22:9","verse":"Then saith he unto me, See thou do it not: for I am thy fellowservant, and of thy brethren the prophets, and of them which keep the sayings of this book: worship God.","ari":"66:22:9"},{"name":"Revelation 22:10","verse":"And he saith unto me, Seal not the sayings of the prophecy of this book: for the time is at hand.","ari":"66:22:10"},{"name":"Revelation 22:11","verse":"He that is unjust, let him be unjust still: and he which is filthy, let him be filthy still: and he that is righteous, let him be righteous still: and he that is holy, let him be holy still.","ari":"66:22:11"},{"name":"Revelation 22:12","verse":"And, behold, I come quickly; and my reward is with me, to give every man according as his work shall be.","ari":"66:22:12"},{"name":"Revelation 22:13","verse":"I am Alpha and Omega, the beginning and the end, the first and the last.","ari":"66:22:13"},{"name":"Revelation 22:14","verse":"Blessed are they that do his commandments, that they may have right to the tree of life, and may enter in through the gates into the city.","ari":"66:22:14"},{"name":"Revelation 22:15","verse":"For without are dogs, and sorcerers, and whoremongers, and murderers, and idolaters, and whosoever loveth and maketh a lie.","ari":"66:22:15"},{"name":"Revelation 22:16","verse":"I Jesus have sent mine angel to testify unto you these things in the churches. I am the root and the offspring of David, and the bright and morning star.","ari":"66:22:16"},{"name":"Revelation 22:17","verse":"And the Spirit and the bride say, Come. And let him that heareth say, Come. And let him that is athirst come. And whosoever will, let him take the water of life freely.","ari":"66:22:17"},{"name":"Revelation 22:18","verse":"For I testify unto every man that heareth the words of the prophecy of this book, If any man shall add unto these things, God shall add unto him the plagues that are written in this book:","ari":"66:22:18"},{"name":"Revelation 22:19","verse":"And if any man shall take away from the words of the book of this prophecy, God shall take away his part out of the book of life, and out of the holy city, and from the things which are written in this book.","ari":"66:22:19"},{"name":"Revelation 22:20","verse":"He which testifieth these things saith, Surely I come quickly. Amen. Even so, come, Lord Jesus.","ari":"66:22:20"},{"name":"Revelation 22:21","verse":"The grace of our Lord Jesus Christ be with you all. Amen.","ari":"66:22:21"}]};
+    var TRANSLATION_NAMES = ["KJV"];
+    var DEFAULT_TRANSLATION = 'KJV';
+
+    // ── State ──────────────────────────────────────────────────────────────
     window.__currentReference = ''
     window.__currentVerseIndex = -1
     window.__overlayVisible = false
 
-    // ── Register the programmatic window API ───────────────────────────────
-    registerWindowAPI()
+    var bibleData = []
+    var currentTranslationName = DEFAULT_TRANSLATION
+    var STORAGE_KEY = 'obs_bible_companion_translation'
 
-    // ── DOM refs ───────────────────────────────────────────────────────────
-    const searchInput      = document.getElementById('searchInput')
-    const searchBtn        = document.getElementById('searchBtn')
-    const clearBtn         = document.getElementById('clearBtn')
-    const translationSelect = document.getElementById('translationSelect')
-    const resultsArea      = document.getElementById('resultsArea')
-    const resultsEmpty     = document.getElementById('resultsEmpty')
-    const showBtn          = document.getElementById('showBtn')
-    const hideBtn          = document.getElementById('hideBtn')
-    const prevBtn          = document.getElementById('prevBtn')
-    const nextBtn          = document.getElementById('nextBtn')
-    const bridgeStatus     = document.getElementById('bridgeStatus')
+    // Unique channel names — no collision with the original OBS Bible plugin
+    var displayChannel = new BroadcastChannel('obs-bible-companion-display')
+    var animChannel    = new BroadcastChannel('obs-bible-companion-anim')
 
-    // ── Translation init ───────────────────────────────────────────────────
-    await initTranslation('KJV', './bible_data/')
+    // ── Populate translation selector ──────────────────────────────────────
+    var translationSelect = document.getElementById('translationSelect')
+    TRANSLATION_NAMES.forEach(function (name) {
+      var opt = document.createElement('option')
+      opt.value = name
+      opt.textContent = name
+      translationSelect.appendChild(opt)
+    })
 
-    // Sync selector to stored translation
-    const storedTrans = localStorage.getItem('obs_bible_translation') ?? 'KJV'
-    translationSelect.value = storedTrans
+    // ── Search ─────────────────────────────────────────────────────────────
+    function searchBible(query, data) {
+      if (!query || !Array.isArray(data) || data.length === 0) return []
+      var q = query.trim().toLowerCase()
+      if (q.length === 0) return []
+      var results = []
+      for (var i = 0; i < data.length; i++) {
+        var entry = data[i]
+        if (!entry || typeof entry.name !== 'string') continue
+        if (entry.name.toLowerCase().includes(q) || entry.verse.toLowerCase().includes(q)) {
+          results.push(Object.assign({}, entry, { __index: i }))
+          if (results.length >= 50) break
+        }
+      }
+      return results
+    }
 
-    // ── Search UI ──────────────────────────────────────────────────────────
+    function findVerseIndexByReference(reference, data) {
+      if (!reference || !Array.isArray(data)) return -1
+      var ref = reference.trim().toLowerCase()
+      for (var i = 0; i < data.length; i++) {
+        if (data[i] && data[i].name && data[i].name.trim().toLowerCase() === ref) return i
+      }
+      return -1
+    }
+
+    // ── Display ────────────────────────────────────────────────────────────
+    function sendMessage(verseObj) {
+      displayChannel.postMessage(verseObj)
+    }
+
+    // ── Overlay ────────────────────────────────────────────────────────────
+    window.showOverlay = function () {
+      animChannel.postMessage({ display: 'flex' })
+      window.__overlayVisible = true
+    }
+
+    window.hideOverlay = function () {
+      animChannel.postMessage({ display: 'none' })
+      window.__overlayVisible = false
+    }
+
+    window.toggleOverlay = function () {
+      if (window.__overlayVisible) { window.hideOverlay() } else { window.showOverlay() }
+    }
+
+    // ── Window API (called by companion_bridge.js) ─────────────────────────
+    window.displayVerseByReference = function (reference) {
+      var idx = findVerseIndexByReference(reference, bibleData)
+      if (idx === -1) {
+        console.warn('[OBS Bible] Reference not found: ' + reference)
+        return
+      }
+      window.__currentVerseIndex = idx
+      window.__currentReference = bibleData[idx].name
+      sendMessage(bibleData[idx])
+    }
+
+    window.nextVerse = function () {
+      if (bibleData.length === 0) return
+      var cur = window.__currentVerseIndex
+      if (cur >= bibleData.length - 1) return
+      var next = cur === -1 ? 0 : cur + 1
+      window.__currentVerseIndex = next
+      window.__currentReference = bibleData[next].name
+      sendMessage(bibleData[next])
+    }
+
+    window.previousVerse = function () {
+      if (bibleData.length === 0) return
+      var cur = window.__currentVerseIndex
+      if (cur <= 0) return
+      var prev = cur - 1
+      window.__currentVerseIndex = prev
+      window.__currentReference = bibleData[prev].name
+      sendMessage(bibleData[prev])
+    }
+
+    window.changeTranslation = function (name) {
+      if (!BIBLE_TRANSLATIONS[name]) {
+        console.warn('[OBS Bible] Unknown translation: ' + name)
+        return
+      }
+      bibleData = BIBLE_TRANSLATIONS[name]
+      currentTranslationName = name
+      try { localStorage.setItem(STORAGE_KEY, name) } catch (_) {}
+      console.log('[OBS Bible] Switched to ' + name + ' (' + bibleData.length + ' verses)')
+      if (window.__currentVerseIndex !== -1 && bibleData[window.__currentVerseIndex]) {
+        var v = bibleData[window.__currentVerseIndex]
+        window.__currentReference = v.name
+        sendMessage(v)
+      }
+    }
+
+    // ── UI ─────────────────────────────────────────────────────────────────
+    var searchInput  = document.getElementById('searchInput')
+    var searchBtn    = document.getElementById('searchBtn')
+    var clearBtn     = document.getElementById('clearBtn')
+    var resultsArea  = document.getElementById('resultsArea')
+    var resultsEmpty = document.getElementById('resultsEmpty')
+    var bridgeStatus = document.getElementById('bridgeStatus')
+
     function renderResults(results) {
       resultsArea.innerHTML = ''
-
       if (results.length === 0) {
         resultsEmpty.textContent = 'No results found.'
         resultsArea.appendChild(resultsEmpty)
         return
       }
-
-      results.forEach((entry) => {
-        const item = document.createElement('div')
+      results.forEach(function (entry) {
+        var item = document.createElement('div')
         item.className = 'result-item'
         item.setAttribute('role', 'listitem')
         item.setAttribute('tabindex', '0')
-
-        item.innerHTML = `
-          <div class="result-item__ref">${entry.name}</div>
-          <div class="result-item__text">${entry.verse}</div>
-        `
-
-        const displayEntry = () => {
+        item.innerHTML =
+          '<div class="result-item__ref">' + entry.name + '</div>' +
+          '<div class="result-item__text">' + entry.verse + '</div>'
+        var display = function () {
           window.__currentVerseIndex = entry.__index
           window.__currentReference = entry.name
           sendMessage({ name: entry.name, verse: entry.verse, ari: entry.ari })
         }
-
-        item.addEventListener('click', displayEntry)
-        item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') displayEntry() })
-
+        item.addEventListener('click', display)
+        item.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') display()
+        })
         resultsArea.appendChild(item)
       })
     }
 
     function doSearch() {
-      const query = searchInput.value.trim()
+      var query = searchInput.value.trim()
       if (!query) {
         resultsArea.innerHTML = ''
         resultsEmpty.textContent = 'Search for a verse or passage above.'
         resultsArea.appendChild(resultsEmpty)
         return
       }
-      const results = searchBible(query, getBibleData())
-      renderResults(results)
+      renderResults(searchBible(query, bibleData))
     }
 
     searchBtn.addEventListener('click', doSearch)
-    searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch() })
-    clearBtn.addEventListener('click', () => {
+    searchInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch() })
+    clearBtn.addEventListener('click', function () {
       searchInput.value = ''
       resultsArea.innerHTML = ''
       resultsEmpty.textContent = 'Search for a verse or passage above.'
       resultsArea.appendChild(resultsEmpty)
     })
 
-    // ── Translation change ─────────────────────────────────────────────────
-    translationSelect.addEventListener('change', async () => {
-      const name = translationSelect.value
-      await loadTranslation(name, './bible_data/')
-      // Re-display current verse in new translation if one is active
-      if (window.__currentVerseIndex !== -1) {
-        const data = getBibleData()
-        const v = data[window.__currentVerseIndex]
-        if (v) {
-          window.__currentReference = v.name
-          sendMessage(v)
-        }
-      }
+    translationSelect.addEventListener('change', function () {
+      window.changeTranslation(translationSelect.value)
     })
 
-    // ── Overlay controls ───────────────────────────────────────────────────
-    showBtn.addEventListener('click', () => window.showOverlay())
-    hideBtn.addEventListener('click', () => window.hideOverlay())
-    prevBtn.addEventListener('click', () => window.previousVerse())
-    nextBtn.addEventListener('click', () => window.nextVerse())
+    document.getElementById('showBtn').addEventListener('click', function () { window.showOverlay() })
+    document.getElementById('hideBtn').addEventListener('click', function () { window.hideOverlay() })
+    document.getElementById('prevBtn').addEventListener('click', function () { window.previousVerse() })
+    document.getElementById('nextBtn').addEventListener('click', function () { window.nextVerse() })
 
-    // ── Bridge status indicator ────────────────────────────────────────────
-    // companion_bridge.js updates this via CustomEvent dispatched on window
-    window.addEventListener('obs-bible-bridge-status', (e) => {
-      if (e.detail?.connected) {
+    window.addEventListener('obs-bible-bridge-status', function (e) {
+      if (e.detail && e.detail.connected) {
         bridgeStatus.classList.add('bridge-status--connected')
         bridgeStatus.querySelector('.bridge-status__label').textContent = 'Bridge connected'
       } else {
@@ -180,9 +248,16 @@
         bridgeStatus.querySelector('.bridge-status__label').textContent = 'Disconnected'
       }
     })
+
+    // ── Boot: load saved or default translation from inlined data ──────────
+    var savedTrans = DEFAULT_TRANSLATION
+    try { savedTrans = localStorage.getItem(STORAGE_KEY) || DEFAULT_TRANSLATION } catch (_) {}
+    if (!BIBLE_TRANSLATIONS[savedTrans]) savedTrans = DEFAULT_TRANSLATION
+    translationSelect.value = savedTrans
+    window.changeTranslation(savedTrans)
+    console.log('[OBS Bible] Ready. ' + bibleData.length + ' verses loaded from inlined data.')
   </script>
 
-  <!-- Bridge must load AFTER all other module scripts so window API is registered -->
   <script src="./js/companion_bridge.js"></script>
 </body>
 </html>
