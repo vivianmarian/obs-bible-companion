@@ -1,0 +1,30 @@
+{
+  "books": {
+    "Genesis": {
+      "testament": "Old",
+      "index": 1,
+      "chapters": {
+        "1": 31
+      }
+    },
+    "John": {
+      "testament": "New",
+      "index": 43,
+      "chapters": {
+        "3": 36
+      }
+    },
+    "Revelation": {
+      "testament": "New",
+      "index": 66,
+      "chapters": {
+        "22": 21
+      }
+    }
+  },
+  "translations": [
+    "KJV"
+  ],
+  "totalVerses": 88,
+  "generatedAt": "2026-06-16T10:46:09.305Z"
+}
