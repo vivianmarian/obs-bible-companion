@@ -11,8 +11,8 @@ import {
   generateStructure,
   run,
   type VerseEntry,
-  type BookMeta,
-} from '../metadata/MetadataGenerator'
+} from '../metadata/MetadataGenerator.js'
+import type { BookMeta } from '../navigation/BibleStructure.js'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'

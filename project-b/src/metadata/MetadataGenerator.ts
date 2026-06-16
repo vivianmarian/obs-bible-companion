@@ -2,7 +2,7 @@
  * MetadataGenerator.ts
  *
  * Reads every translation JSON file in project-a/src/bible_data/,
- * derives the canonical book → chapter → verse-count structure from
+ * derives the canonical book -> chapter -> verse-count structure from
  * the union of all translations, and writes the result to
  * project-a/src/bible_data/bible_structure.json.
  *
@@ -10,13 +10,24 @@
  *
  * No book list, chapter count, or verse count is ever hardcoded here.
  * All values are derived entirely from the data files (Decision 12).
+ *
+ * Types (BookMeta, BibleStructureData, ChapterMap) are defined in
+ * BibleStructure.ts and imported from there to keep a single source of
+ * truth and avoid ts-jest ESM aliased re-export resolution failures.
  */
 
 import fs from 'fs'
 import path from 'path'
 
+// Import shared types from BibleStructure (single source of truth).
+import type { BookMeta, BibleStructureData, ChapterMap } from '../navigation/BibleStructure.js'
+export type { BookMeta, BibleStructureData, ChapterMap }
+
+// Internal alias so the code below reads naturally.
+type BibleStructure = BibleStructureData
+
 // ---------------------------------------------------------------------------
-// Types
+// Types local to MetadataGenerator
 // ---------------------------------------------------------------------------
 
 /** One entry in a translation JSON array. */
@@ -26,31 +37,13 @@ export interface VerseEntry {
   ari: string    // "bookIndex:chapter:verse"  e.g. "43:3:16"
 }
 
-/** Per-chapter data: map of chapter number (string) → verse count. */
-export type ChapterMap = Record<string, number>
-
-/** Per-book data stored in the output file. */
-export interface BookMeta {
-  testament: 'Old' | 'New'
-  index: number       // 1-based canonical book index from ari
-  chapters: ChapterMap
-}
-
-/** Shape of the generated bible_structure.json. */
-export interface BibleStructure {
-  books: Record<string, BookMeta>
-  translations: string[]
-  totalVerses: number
-  generatedAt: string
-}
-
 // ---------------------------------------------------------------------------
 // Old-Testament / New-Testament boundary
 // ---------------------------------------------------------------------------
 
 /**
- * Books 1–39 are Old Testament, 40–66 are New Testament.
- * (Genesis = 1 … Malachi = 39 / Matthew = 40 … Revelation = 66)
+ * Books 1-39 are Old Testament, 40-66 are New Testament.
+ * (Genesis = 1, Malachi = 39 / Matthew = 40, Revelation = 66)
  */
 function testament(bookIndex: number): 'Old' | 'New' {
   return bookIndex <= 39 ? 'Old' : 'New'
@@ -63,11 +56,6 @@ function testament(bookIndex: number): 'Old' | 'New' {
 /**
  * Parse a single translation's verse array and fold its data into
  * the accumulator maps.
- *
- * @param entries      Parsed JSON array from one translation file.
- * @param books        Mutable accumulator: bookName → BookMeta.
- * @param bookNameMap  Mutable accumulator: bookIndex → canonical book name
- *                     (first time we see a book we record its name).
  */
 export function processTranslation(
   entries: VerseEntry[],
@@ -93,8 +81,6 @@ export function processTranslation(
       )
     }
 
-    // Derive the book name from the `name` field ("Book Chapter:Verse").
-    // Split on the last space-then-chapter:verse portion.
     const nameMatch = entry.name.match(/^(.+?)\s+\d+:\d+$/)
     if (!nameMatch) {
       throw new Error(
@@ -104,14 +90,12 @@ export function processTranslation(
     }
     const bookName = nameMatch[1]
 
-    // Register the canonical name for this book index the first time we see it.
     if (!(bookIndex in bookNameMap)) {
       bookNameMap[bookIndex] = bookName
     }
 
     const canonicalName = bookNameMap[bookIndex]
 
-    // Initialise BookMeta if this is the first verse we've seen for this book.
     if (!(canonicalName in books)) {
       books[canonicalName] = {
         testament: testament(bookIndex),
@@ -121,8 +105,6 @@ export function processTranslation(
     }
 
     const chapterKey = String(chapter)
-
-    // Track the highest verse number seen for each chapter.
     const currentMax = books[canonicalName].chapters[chapterKey] ?? 0
     if (verse > currentMax) {
       books[canonicalName].chapters[chapterKey] = verse
@@ -132,7 +114,7 @@ export function processTranslation(
 
 /**
  * Generate a BibleStructure object from an array of (translationName, entries) pairs.
- * Pure function — no filesystem access.
+ * Pure function - no filesystem access.
  */
 export function generateStructure(
   translations: Array<{ name: string; entries: VerseEntry[] }>,
@@ -146,13 +128,11 @@ export function generateStructure(
     processTranslation(entries, books, bookNameMap)
   }
 
-  // Sort books by canonical index for deterministic output.
   const sortedBooks: Record<string, BookMeta> = {}
   const sortedEntries = Object.entries(books).sort(
     ([, a], [, b]) => a.index - b.index,
   )
   for (const [bookName, meta] of sortedEntries) {
-    // Sort chapter keys numerically for deterministic output.
     const sortedChapters: ChapterMap = {}
     const chapterKeys = Object.keys(meta.chapters).sort(
       (a, b) => parseInt(a, 10) - parseInt(b, 10),
@@ -163,7 +143,6 @@ export function generateStructure(
     sortedBooks[bookName] = { ...meta, chapters: sortedChapters }
   }
 
-  // totalVerses = sum of all verse counts across all books and chapters.
   let totalVerses = 0
   for (const meta of Object.values(sortedBooks)) {
     for (const count of Object.values(meta.chapters)) {
@@ -184,8 +163,8 @@ export function generateStructure(
 // ---------------------------------------------------------------------------
 
 /**
- * Read all *.json files from `dataDir`, parse them as VerseEntry arrays,
- * generate a BibleStructure, and write it to `outputPath`.
+ * Read all *.json files from dataDir, parse them as VerseEntry arrays,
+ * generate a BibleStructure, and write it to outputPath.
  */
 export function run(dataDir: string, outputPath: string): BibleStructure {
   if (!fs.existsSync(dataDir)) {
@@ -195,7 +174,7 @@ export function run(dataDir: string, outputPath: string): BibleStructure {
   const jsonFiles = fs
     .readdirSync(dataDir)
     .filter(f => f.endsWith('.json') && f !== 'bible_structure.json')
-    .sort() // deterministic order
+    .sort()
 
   if (jsonFiles.length === 0) {
     throw new Error(`No translation JSON files found in ${dataDir}`)
@@ -220,7 +199,6 @@ export function run(dataDir: string, outputPath: string): BibleStructure {
 
   const structure = generateStructure(translations)
 
-  // Ensure the output directory exists.
   const outDir = path.dirname(outputPath)
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true })
@@ -240,10 +218,8 @@ export function run(dataDir: string, outputPath: string): BibleStructure {
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-// When this file is executed directly (not imported as a module) we run the
-// generator using paths relative to the monorepo root.
 const isMain = process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)
+  new URL(import.meta.url).href === new URL(process.argv[1], 'file://').href
 
 if (isMain) {
   const repoRoot   = path.resolve(new URL(import.meta.url).pathname, '../../../../')
@@ -253,7 +229,7 @@ if (isMain) {
   try {
     run(dataDir, outputPath)
   } catch (err) {
-    console.error(`❌ MetadataGenerator failed: ${(err as Error).message}`)
+    console.error(`Failed: ${(err as Error).message}`)
     process.exit(1)
   }
 }
