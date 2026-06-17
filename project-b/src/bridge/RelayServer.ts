@@ -208,10 +208,11 @@ export class RelayServer {
   }
 }
 
-// ─── Standalone entry point ───────────────────────────────────────────────────
-// Runs when executed directly: npx ts-node src/bridge/RelayServer.ts
+// ESM has no require.main — use import.meta.url comparison instead.
+const _isMain = process.argv[1] !== undefined &&
+  new URL(import.meta.url).href === new URL(process.argv[1], 'file://').href
 
-if (require.main === module) {
+if (_isMain) {
   const server = new RelayServer()
   server.start().catch((err: Error) => {
     console.error(err.message)

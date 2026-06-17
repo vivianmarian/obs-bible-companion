@@ -17,10 +17,10 @@ export const config = {
   reconnectMaxDelayMs: 30000,
 
   /** BroadcastChannel name used to send verse text to browser_source.html */
-  broadcastChannelDisplay: 'myChannel',
+  broadcastChannelDisplay: 'obs-bible-companion-display',
 
   /** BroadcastChannel name used to control overlay visibility */
-  broadcastChannelAnimation: 'obs-bible-animation',
+  broadcastChannelAnimation: 'obs-bible-companion-anim',
 
   /** Default Bible translation to load on first run */
   defaultTranslation: 'KJV',

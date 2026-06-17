@@ -1,10 +1,16 @@
 {
-  "name": "obs-bible-companion",
-  "version": "1.0.0",
+  "name": "obs-bible-companion-monorepo",
+  "version": "0.1.0",
   "private": true,
-  "workspaces": ["project-a", "project-b"],
-  "scripts": {
-    "test": "npm run test --workspaces"
-  },
-  "engines": { "node": ">=20.0.0" }
+  "workspaces": [
+    "project-a",
+    "project-b"
+  ],
+  "devDependencies": {
+    "@jest/globals": "^29.0.0",
+    "jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.4.0"
+  }
 }
