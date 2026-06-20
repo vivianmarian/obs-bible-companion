@@ -46,7 +46,7 @@ const dataBlock = `var BIBLE_TRANSLATIONS = ${JSON.stringify(translations)};
 
 // ── Read template and inject ───────────────────────────────────────────────
 const template = fs.readFileSync(TEMPLATE_PATH, 'utf8')
-const output   = template.replace('/* __BIBLE_DATA_PLACEHOLDER__ */', dataBlock)
+const output   = template.replace('var BIBLE_TRANSLATIONS = __BIBLE_DATA_PLACEHOLDER__', dataBlock)
 
 fs.writeFileSync(OUTPUT_PATH, output, 'utf8')
 console.log(`\nBuilt: ${OUTPUT_PATH}`)

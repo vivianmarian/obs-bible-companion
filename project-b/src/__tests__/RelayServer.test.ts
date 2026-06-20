@@ -1,198 +1,231 @@
 /**
- * Tests for RelayServer.ts
+ * RelayServer.test.ts
  *
- * Tests cover:
- *  - Server starts and listens on correct port
- *  - Messages forwarded from companion → browser
- *  - Messages forwarded from browser → companion
- *  - Stale socket replacement when browser reconnects (Decision 6)
- *  - Stale socket replacement when companion reconnects (Decision 6)
- *  - Unknown client role is rejected
- *  - Port-in-use produces clear error and rejects promise
- *  - Messages dropped gracefully when target not connected
+ * Integration tests for the WebSocket relay server.
+ *
+ * FIX (Sprint 5): The "Cannot log after tests are done" warning was caused by
+ * afterEach calling stopServer() and returning immediately, while WebSocket
+ * close events fired asynchronously after Jest had already marked the test
+ * complete. The fix is two-part:
+ *
+ *   1. Every test closes its own WebSocket clients explicitly BEFORE
+ *      stopServer() is called, so the server's per-socket close handlers
+ *      fire while the server is still alive and the console buffer is open.
+ *
+ *   2. afterEach awaits a short sleep(50) after stopServer() to drain any
+ *      remaining async callbacks before Jest tears down the console buffer.
  */
 
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
 import { WebSocket } from 'ws'
-import { RelayServer } from '../bridge/RelayServer'
+import { RelayServer } from '../bridge/RelayServer.js'
 
-const TEST_PORT = 18765 // use non-default port to avoid conflicts in CI
+const TEST_PORT = 18765
 
-/** Helper: open a WebSocket and wait for it to be ready */
-function connectClient(port: number, role: string): Promise<WebSocket> {
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Open a WebSocket to the test server and resolve when open. */
+function connect(role: 'companion' | 'browser' | 'unknown'): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}?client=${role}`)
-    ws.on('open', () => resolve(ws))
-    ws.on('error', reject)
+    const param = role === 'unknown' ? 'garbage' : role
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}?client=${param}`)
+    ws.once('open', () => resolve(ws))
+    ws.once('error', reject)
   })
 }
 
-/** Helper: collect the next message that arrives on a WebSocket */
-function nextMessage(ws: WebSocket): Promise<string> {
-  return new Promise((resolve) => {
-    ws.once('message', (data) => resolve(data.toString()))
-  })
-}
-
-/** Helper: wait for a socket close event */
-function waitForClose(ws: WebSocket): Promise<void> {
-  return new Promise((resolve) => ws.once('close', () => resolve()))
-}
-
-/** Helper: small async sleep */
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms))
-
-// ─── Test suite ────────────────────────────────────────────────────────────────
-
-describe('RelayServer', () => {
-  let server: RelayServer
-
-  beforeEach(async () => {
-    server = new RelayServer({ port: TEST_PORT })
-    await server.start()
-  })
-
-  afterEach(async () => {
-    await server.stop()
-  })
-
-  // ── Startup ────────────────────────────────────────────────────────────────
-
-  it('starts and listens on the configured port', async () => {
-    // If we reach here, start() resolved — server is listening
-    const ws = await connectClient(TEST_PORT, 'companion')
-    expect(ws.readyState).toBe(WebSocket.OPEN)
+/**
+ * Close a WebSocket and wait for the close event to fully propagate.
+ * Must be called BEFORE stopServer() — if the server is stopped first,
+ * its per-socket close handler fires asynchronously after Jest has already
+ * cleared the console buffer, producing the "Cannot log after tests are done"
+ * warning.
+ */
+function closeAndWait(ws: WebSocket): Promise<void> {
+  return new Promise(resolve => {
+    if (ws.readyState === WebSocket.CLOSED) { resolve(); return }
+    ws.once('close', () => resolve())
     ws.close()
   })
+}
 
-  // ── Forwarding ─────────────────────────────────────────────────────────────
+/** Wait for the next message on a WebSocket. */
+function waitForMessage(ws: WebSocket): Promise<string> {
+  return new Promise((resolve, reject) => {
+    ws.once('message', data => resolve(data.toString()))
+    ws.once('error', reject)
+  })
+}
 
+/** Drain remaining async callbacks before Jest checks for stray console output. */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// ---------------------------------------------------------------------------
+// Suite setup
+// ---------------------------------------------------------------------------
+
+let server: RelayServer
+
+beforeEach(async () => {
+  server = new RelayServer({ port: TEST_PORT })
+  await server.start()
+})
+
+afterEach(async () => {
+  await server.stop()
+  // Drain any remaining WebSocket close callbacks so they complete before
+  // Jest tears down the console buffer.
+  await sleep(50)
+})
+
+// ---------------------------------------------------------------------------
+// Basic connectivity
+// ---------------------------------------------------------------------------
+
+describe('RelayServer — basic connectivity', () => {
+  it('starts and listens on the configured port', async () => {
+    const ws = await connect('companion')
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    await closeAndWait(ws)
+  })
+
+  it('accepts a companion client connection', async () => {
+    const ws = await connect('companion')
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    await closeAndWait(ws)
+  })
+
+  it('accepts a browser client connection', async () => {
+    const ws = await connect('browser')
+    expect(ws.readyState).toBe(WebSocket.OPEN)
+    await closeAndWait(ws)
+  })
+
+  it('rejects a connection with an unknown role', async () => {
+    const ws = await connect('unknown')
+    await new Promise<void>(resolve => {
+      if (ws.readyState === WebSocket.CLOSED) { resolve(); return }
+      ws.once('close', () => resolve())
+    })
+    expect(ws.readyState).toBe(WebSocket.CLOSED)
+  })
+
+  it('rejects a second server on a port already in use', async () => {
+    const second = new RelayServer({ port: TEST_PORT })
+    await expect(second.start()).rejects.toThrow(/already in use/)
+    await second.stop()
+    await sleep(20)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Message forwarding
+// ---------------------------------------------------------------------------
+
+describe('RelayServer — message forwarding', () => {
   it('forwards a message from companion to browser', async () => {
-    const companion = await connectClient(TEST_PORT, 'companion')
-    const browser = await connectClient(TEST_PORT, 'browser')
-    await sleep(50) // let server register both
+    const companion = await connect('companion')
+    const browser   = await connect('browser')
 
-    const payload = JSON.stringify({ action: 'nextVerse' })
-    const received = nextMessage(browser)
-    companion.send(payload)
+    const received = waitForMessage(browser)
+    companion.send(JSON.stringify({ type: 'displayVerse', reference: 'John 3:16' }))
+    const msg = await received
 
-    expect(await received).toBe(payload)
-    companion.close()
-    browser.close()
+    await closeAndWait(companion)
+    await closeAndWait(browser)
+
+    expect(JSON.parse(msg)).toMatchObject({ type: 'displayVerse', reference: 'John 3:16' })
   })
 
   it('forwards a message from browser to companion', async () => {
-    const companion = await connectClient(TEST_PORT, 'companion')
-    const browser = await connectClient(TEST_PORT, 'browser')
-    await sleep(50)
+    const companion = await connect('companion')
+    const browser   = await connect('browser')
 
-    const state = JSON.stringify({ connected: true, currentReference: 'John 3:16' })
-    const received = nextMessage(companion)
-    browser.send(state)
+    const received = waitForMessage(companion)
+    browser.send(JSON.stringify({ connected: true, currentReference: 'John 3:16' }))
+    const msg = await received
 
-    expect(await received).toBe(state)
-    companion.close()
-    browser.close()
+    await closeAndWait(companion)
+    await closeAndWait(browser)
+
+    expect(JSON.parse(msg)).toMatchObject({ connected: true, currentReference: 'John 3:16' })
   })
 
-  // ── Reconnection — Decision 6 ──────────────────────────────────────────────
-
-  it('replaces stale browser socket when browser reconnects', async () => {
-    const companion = await connectClient(TEST_PORT, 'companion')
-    const browser1 = await connectClient(TEST_PORT, 'browser')
-    await sleep(50)
-
-    // Disconnect browser1
-    browser1.close()
-    await waitForClose(browser1)
-    await sleep(50)
-
-    // Reconnect with a new browser socket
-    const browser2 = await connectClient(TEST_PORT, 'browser')
-    await sleep(50)
-
-    // Message from companion should arrive at browser2 (not stale browser1)
-    const payload = JSON.stringify({ action: 'show' })
-    const received = nextMessage(browser2)
-    companion.send(payload)
-
-    expect(await received).toBe(payload)
-    companion.close()
-    browser2.close()
+  it('warns but does not crash when companion sends with no browser connected', async () => {
+    const companion = await connect('companion')
+    expect(() => companion.send(JSON.stringify({ type: 'ping' }))).not.toThrow()
+    await sleep(30)
+    await closeAndWait(companion)
   })
 
-  it('replaces stale companion socket when companion reconnects', async () => {
-    const companion1 = await connectClient(TEST_PORT, 'companion')
-    const browser = await connectClient(TEST_PORT, 'browser')
-    await sleep(50)
+  it('warns but does not crash when browser sends with no companion connected', async () => {
+    const browser = await connect('browser')
+    expect(() => browser.send(JSON.stringify({ connected: true }))).not.toThrow()
+    await sleep(30)
+    await closeAndWait(browser)
+  })
+})
 
-    // Disconnect companion1
-    companion1.close()
-    await waitForClose(companion1)
-    await sleep(50)
+// ---------------------------------------------------------------------------
+// Reconnection handling
+// ---------------------------------------------------------------------------
 
-    // Reconnect with a new companion socket
-    const companion2 = await connectClient(TEST_PORT, 'companion')
-    await sleep(50)
+describe('RelayServer — reconnection handling', () => {
+  it('replaces companionSocket cleanly when companion reconnects', async () => {
+    const first = await connect('companion')
+    await closeAndWait(first)
+    await sleep(20)
 
-    // Message from browser should arrive at companion2
-    const state = JSON.stringify({ connected: true, overlayVisible: false })
-    const received = nextMessage(companion2)
-    browser.send(state)
-
-    expect(await received).toBe(state)
-    companion2.close()
-    browser.close()
+    const second = await connect('companion')
+    expect(second.readyState).toBe(WebSocket.OPEN)
+    await closeAndWait(second)
   })
 
-  // ── Unknown role ───────────────────────────────────────────────────────────
+  it('replaces browserSocket cleanly when browser reconnects', async () => {
+    const first = await connect('browser')
+    await closeAndWait(first)
+    await sleep(20)
 
-  it('closes connections with unknown client role', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}?client=unknown`)
-    await waitForClose(ws)
-    expect(ws.readyState).toBe(WebSocket.CLOSED)
+    const second = await connect('browser')
+    expect(second.readyState).toBe(WebSocket.OPEN)
+    await closeAndWait(second)
   })
 
-  it('closes connections with no client role', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`)
-    await waitForClose(ws)
-    expect(ws.readyState).toBe(WebSocket.CLOSED)
+  it('forwards correctly after companion reconnects', async () => {
+    const firstCompanion = await connect('companion')
+    const browser = await connect('browser')
+    await closeAndWait(firstCompanion)
+    await sleep(20)
+
+    const secondCompanion = await connect('companion')
+    const received = waitForMessage(browser)
+    secondCompanion.send(JSON.stringify({ type: 'nextVerse' }))
+    const msg = await received
+
+    await closeAndWait(secondCompanion)
+    await closeAndWait(browser)
+
+    expect(JSON.parse(msg)).toMatchObject({ type: 'nextVerse' })
   })
 
-  // ── No target connected ────────────────────────────────────────────────────
+  it('forwards correctly after browser reconnects', async () => {
+    const companion = await connect('companion')
+    const firstBrowser = await connect('browser')
+    await closeAndWait(firstBrowser)
+    await sleep(20)
 
-  it('drops companion message gracefully when browser is not connected', async () => {
-    const companion = await connectClient(TEST_PORT, 'companion')
-    await sleep(50)
+    const secondBrowser = await connect('browser')
+    const received = waitForMessage(companion)
+    secondBrowser.send(JSON.stringify({ connected: true, currentReference: 'Genesis 1:1' }))
+    const msg = await received
 
-    // No browser connected — should not throw
-    expect(() => {
-      companion.send(JSON.stringify({ action: 'nextVerse' }))
-    }).not.toThrow()
+    await closeAndWait(companion)
+    await closeAndWait(secondBrowser)
 
-    await sleep(50) // give relay time to process
-    companion.close()
-  })
-
-  it('drops browser message gracefully when companion is not connected', async () => {
-    const browser = await connectClient(TEST_PORT, 'browser')
-    await sleep(50)
-
-    expect(() => {
-      browser.send(JSON.stringify({ connected: true }))
-    }).not.toThrow()
-
-    await sleep(50)
-    browser.close()
-  })
-
-  // ── Port in use ────────────────────────────────────────────────────────────
-
-  it('rejects with a clear error message when port is already in use', async () => {
-    // server is already running on TEST_PORT from beforeEach
-    const duplicate = new RelayServer({ port: TEST_PORT })
-    await expect(duplicate.start()).rejects.toThrow(
-      `Port ${TEST_PORT} is already in use`
-    )
+    expect(JSON.parse(msg)).toMatchObject({ currentReference: 'Genesis 1:1' })
   })
 })

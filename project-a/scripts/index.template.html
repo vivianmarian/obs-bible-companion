@@ -1,261 +1,290 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="obs-bible-port" content="8765">
-  <title>OBS Bible</title>
-  <link rel="stylesheet" href="css/styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OBS Bible Companion</title>
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-  <div class="plugin-root">
 
-    <header class="plugin-header">
-      <h1>OBS Bible</h1>
-      <span class="bridge-status" id="bridgeStatus">
-        <span class="bridge-status__dot"></span>
-        <span class="bridge-status__label">Disconnected</span>
-      </span>
-    </header>
+  <!-- ======================================================================
+       OBS Bible Companion — Custom Browser Dock
+       Load this file via: OBS → View → Docks → Custom Browser Docks
+       DO NOT load as a Browser Source — it must stay alive across scene changes.
+       ====================================================================== -->
 
-    <div class="search-area">
-      <div class="search-row">
-        <input
-          type="search"
-          id="searchInput"
-          class="search-input"
-          placeholder="Search by reference or text…"
-          aria-label="Search Bible"
-          autocomplete="off"
-        >
-        <button class="btn btn--primary" id="searchBtn">Search</button>
-        <button class="btn btn--ghost btn--icon" id="clearBtn" title="Clear">✕</button>
-      </div>
-      <div class="translation-row">
-        <span class="translation-label">Translation:</span>
-        <select class="translation-select" id="translationSelect" id="translationSelect">
-        </select>
+  <div id="app">
+
+    <div id="header">
+      <h1>OBS Bible Companion</h1>
+      <div id="translation-controls">
+        <label for="translation-select">Translation:</label>
+        <select id="translation-select"></select>
       </div>
     </div>
 
-    <div class="results-area" id="resultsArea" role="list">
-      <div class="results-empty" id="resultsEmpty">Search for a verse or passage above.</div>
+    <div id="search-section">
+      <input
+        type="text"
+        id="search-input"
+        placeholder="Search (e.g. John 3:16 or 'God so loved')"
+        autocomplete="off"
+      />
+      <button id="search-btn">Search</button>
     </div>
 
-    <div class="overlay-controls">
-      <button class="btn btn--ghost" id="showBtn">Show</button>
-      <button class="btn btn--ghost" id="hideBtn">Hide</button>
-      <button class="btn btn--ghost" id="prevBtn">◀ Prev</button>
-      <button class="btn btn--ghost" id="nextBtn">Next ▶</button>
+    <div id="results-section">
+      <ul id="results-list"></ul>
     </div>
+
+    <div id="current-verse-section">
+      <div id="current-reference"></div>
+      <div id="current-text"></div>
+      <div id="nav-controls">
+        <button id="prev-btn" title="Previous verse">&larr; Prev</button>
+        <button id="overlay-btn">Show</button>
+        <button id="next-btn" title="Next verse">Next &rarr;</button>
+      </div>
+    </div>
+
+    <div id="status-bar">
+      <span id="companion-status">Companion: disconnected</span>
+    </div>
+
   </div>
 
+  <!-- ==================================================================
+       BIBLE DATA — inlined by build-html.cjs at build time.
+       OBS CEF blocks fetch() on file:// URLs (Decision 13).
+       DO NOT add fetch() calls here — data must come from this variable.
+       ================================================================== -->
   <script>
-    'use strict'
+    var BIBLE_TRANSLATIONS = __BIBLE_DATA_PLACEHOLDER__
+  </script>
 
-    // ── Inlined Bible data (injected by scripts/build-html.js) ────────────
-    /* __BIBLE_DATA_PLACEHOLDER__ */
+  <!-- ==================================================================
+       APPLICATION SCRIPTS
+       All plain <script> tags — no type="module", no import statements.
+       OBS CEF blocks ES6 imports on file:// URLs (Decision 14).
+       ================================================================== -->
 
-    // ── State ──────────────────────────────────────────────────────────────
-    window.__currentReference = ''
-    window.__currentVerseIndex = -1
-    window.__overlayVisible = false
+  <script>
+    // -----------------------------------------------------------------------
+    // Translation management
+    // -----------------------------------------------------------------------
 
-    var bibleData = []
-    var currentTranslationName = DEFAULT_TRANSLATION
-    var STORAGE_KEY = 'obs_bible_companion_translation'
-
-    // Unique channel names — no collision with the original OBS Bible plugin
-    var displayChannel = new BroadcastChannel('obs-bible-companion-display')
-    var animChannel    = new BroadcastChannel('obs-bible-companion-anim')
-
-    // ── Populate translation selector ──────────────────────────────────────
-    var translationSelect = document.getElementById('translationSelect')
-    TRANSLATION_NAMES.forEach(function (name) {
-      var opt = document.createElement('option')
-      opt.value = name
-      opt.textContent = name
-      translationSelect.appendChild(opt)
-    })
-
-    // ── Search ─────────────────────────────────────────────────────────────
-    function searchBible(query, data) {
-      if (!query || !Array.isArray(data) || data.length === 0) return []
-      var q = query.trim().toLowerCase()
-      if (q.length === 0) return []
-      var results = []
-      for (var i = 0; i < data.length; i++) {
-        var entry = data[i]
-        if (!entry || typeof entry.name !== 'string') continue
-        if (entry.name.toLowerCase().includes(q) || entry.verse.toLowerCase().includes(q)) {
-          results.push(Object.assign({}, entry, { __index: i }))
-          if (results.length >= 50) break
-        }
+    var currentTranslation = (function () {
+      try {
+        return localStorage.getItem('obs_bible_companion_translation') || 'KJV'
+      } catch (_) {
+        return 'KJV'
       }
-      return results
-    }
+    }())
 
-    function findVerseIndexByReference(reference, data) {
-      if (!reference || !Array.isArray(data)) return -1
-      var ref = reference.trim().toLowerCase()
-      for (var i = 0; i < data.length; i++) {
-        if (data[i] && data[i].name && data[i].name.trim().toLowerCase() === ref) return i
-      }
-      return -1
-    }
+    // Expose for companion_bridge.js to read.
+    window.__currentTranslation = currentTranslation
 
-    // ── Display ────────────────────────────────────────────────────────────
-    function sendMessage(verseObj) {
-      displayChannel.postMessage(verseObj)
-    }
-
-    // ── Overlay ────────────────────────────────────────────────────────────
-    window.showOverlay = function () {
-      animChannel.postMessage({ display: 'flex' })
-      window.__overlayVisible = true
-    }
-
-    window.hideOverlay = function () {
-      animChannel.postMessage({ display: 'none' })
-      window.__overlayVisible = false
-    }
-
-    window.toggleOverlay = function () {
-      if (window.__overlayVisible) { window.hideOverlay() } else { window.showOverlay() }
-    }
-
-    // ── Window API (called by companion_bridge.js) ─────────────────────────
-    window.displayVerseByReference = function (reference) {
-      var idx = findVerseIndexByReference(reference, bibleData)
-      if (idx === -1) {
-        console.warn('[OBS Bible] Reference not found: ' + reference)
-        return
-      }
-      window.__currentVerseIndex = idx
-      window.__currentReference = bibleData[idx].name
-      sendMessage(bibleData[idx])
-    }
-
-    window.nextVerse = function () {
-      if (bibleData.length === 0) return
-      var cur = window.__currentVerseIndex
-      if (cur >= bibleData.length - 1) return
-      var next = cur === -1 ? 0 : cur + 1
-      window.__currentVerseIndex = next
-      window.__currentReference = bibleData[next].name
-      sendMessage(bibleData[next])
-    }
-
-    window.previousVerse = function () {
-      if (bibleData.length === 0) return
-      var cur = window.__currentVerseIndex
-      if (cur <= 0) return
-      var prev = cur - 1
-      window.__currentVerseIndex = prev
-      window.__currentReference = bibleData[prev].name
-      sendMessage(bibleData[prev])
-    }
-
-    window.changeTranslation = function (name) {
+    function setTranslation (name) {
       if (!BIBLE_TRANSLATIONS[name]) {
         console.warn('[OBS Bible] Unknown translation: ' + name)
         return
       }
-      bibleData = BIBLE_TRANSLATIONS[name]
-      currentTranslationName = name
-      try { localStorage.setItem(STORAGE_KEY, name) } catch (_) {}
-      console.log('[OBS Bible] Switched to ' + name + ' (' + bibleData.length + ' verses)')
-      if (window.__currentVerseIndex !== -1 && bibleData[window.__currentVerseIndex]) {
-        var v = bibleData[window.__currentVerseIndex]
-        window.__currentReference = v.name
-        sendMessage(v)
-      }
+      currentTranslation = name
+      window.__currentTranslation = name
+      try {
+        localStorage.setItem('obs_bible_companion_translation', name)
+      } catch (_) {}
+      populateTranslationSelect()
     }
 
-    // ── UI ─────────────────────────────────────────────────────────────────
-    var searchInput  = document.getElementById('searchInput')
-    var searchBtn    = document.getElementById('searchBtn')
-    var clearBtn     = document.getElementById('clearBtn')
-    var resultsArea  = document.getElementById('resultsArea')
-    var resultsEmpty = document.getElementById('resultsEmpty')
-    var bridgeStatus = document.getElementById('bridgeStatus')
-
-    function renderResults(results) {
-      resultsArea.innerHTML = ''
-      if (results.length === 0) {
-        resultsEmpty.textContent = 'No results found.'
-        resultsArea.appendChild(resultsEmpty)
-        return
-      }
-      results.forEach(function (entry) {
-        var item = document.createElement('div')
-        item.className = 'result-item'
-        item.setAttribute('role', 'listitem')
-        item.setAttribute('tabindex', '0')
-        item.innerHTML =
-          '<div class="result-item__ref">' + entry.name + '</div>' +
-          '<div class="result-item__text">' + entry.verse + '</div>'
-        var display = function () {
-          window.__currentVerseIndex = entry.__index
-          window.__currentReference = entry.name
-          sendMessage({ name: entry.name, verse: entry.verse, ari: entry.ari })
-        }
-        item.addEventListener('click', display)
-        item.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter' || e.key === ' ') display()
-        })
-        resultsArea.appendChild(item)
+    function populateTranslationSelect () {
+      var sel = document.getElementById('translation-select')
+      if (!sel) return
+      sel.innerHTML = ''
+      Object.keys(BIBLE_TRANSLATIONS).forEach(function (name) {
+        var opt = document.createElement('option')
+        opt.value = name
+        opt.textContent = name
+        if (name === currentTranslation) opt.selected = true
+        sel.appendChild(opt)
       })
     }
 
-    function doSearch() {
-      var query = searchInput.value.trim()
-      if (!query) {
-        resultsArea.innerHTML = ''
-        resultsEmpty.textContent = 'Search for a verse or passage above.'
-        resultsArea.appendChild(resultsEmpty)
-        return
-      }
-      renderResults(searchBible(query, bibleData))
+    // Public API used by companion_bridge.js
+    window.changeTranslation = function (name) {
+      setTranslation(name)
     }
-
-    searchBtn.addEventListener('click', doSearch)
-    searchInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch() })
-    clearBtn.addEventListener('click', function () {
-      searchInput.value = ''
-      resultsArea.innerHTML = ''
-      resultsEmpty.textContent = 'Search for a verse or passage above.'
-      resultsArea.appendChild(resultsEmpty)
-    })
-
-    translationSelect.addEventListener('change', function () {
-      window.changeTranslation(translationSelect.value)
-    })
-
-    document.getElementById('showBtn').addEventListener('click', function () { window.showOverlay() })
-    document.getElementById('hideBtn').addEventListener('click', function () { window.hideOverlay() })
-    document.getElementById('prevBtn').addEventListener('click', function () { window.previousVerse() })
-    document.getElementById('nextBtn').addEventListener('click', function () { window.nextVerse() })
-
-    window.addEventListener('obs-bible-bridge-status', function (e) {
-      if (e.detail && e.detail.connected) {
-        bridgeStatus.classList.add('bridge-status--connected')
-        bridgeStatus.querySelector('.bridge-status__label').textContent = 'Bridge connected'
-      } else {
-        bridgeStatus.classList.remove('bridge-status--connected')
-        bridgeStatus.querySelector('.bridge-status__label').textContent = 'Disconnected'
-      }
-    })
-
-    // ── Boot: load saved or default translation from inlined data ──────────
-    var savedTrans = DEFAULT_TRANSLATION
-    try { savedTrans = localStorage.getItem(STORAGE_KEY) || DEFAULT_TRANSLATION } catch (_) {}
-    if (!BIBLE_TRANSLATIONS[savedTrans]) savedTrans = DEFAULT_TRANSLATION
-    translationSelect.value = savedTrans
-    window.changeTranslation(savedTrans)
-    console.log('[OBS Bible] Ready. ' + bibleData.length + ' verses loaded from inlined data.')
   </script>
 
-  <script src="./js/companion_bridge.js"></script>
+  <script>
+    // -----------------------------------------------------------------------
+    // Search
+    // -----------------------------------------------------------------------
+
+    function getBibleData () {
+      return BIBLE_TRANSLATIONS[currentTranslation] || []
+    }
+
+    function searchVerses (query) {
+      var data  = getBibleData()
+      var q     = query.trim().toLowerCase()
+      if (!q) return []
+
+      // Try exact reference match first (e.g. "John 3:16")
+      var refMatch = data.filter(function (v) {
+        return v.name.toLowerCase() === q
+      })
+      if (refMatch.length > 0) return refMatch
+
+      // Full-text search
+      return data.filter(function (v) {
+        return v.name.toLowerCase().indexOf(q) !== -1 ||
+               v.verse.toLowerCase().indexOf(q) !== -1
+      }).slice(0, 50)
+    }
+
+    function renderResults (results) {
+      var list = document.getElementById('results-list')
+      if (!list) return
+      list.innerHTML = ''
+      if (results.length === 0) {
+        var li = document.createElement('li')
+        li.className = 'no-results'
+        li.textContent = 'No results found.'
+        list.appendChild(li)
+        return
+      }
+      results.forEach(function (v) {
+        var li = document.createElement('li')
+        li.className = 'result-item'
+        li.innerHTML = '<strong>' + v.name + '</strong> ' + v.verse
+        li.addEventListener('click', function () {
+          displayVerseByReference(v.name)
+        })
+        list.appendChild(li)
+      })
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      var btn   = document.getElementById('search-btn')
+      var input = document.getElementById('search-input')
+      if (btn && input) {
+        btn.addEventListener('click', function () {
+          renderResults(searchVerses(input.value))
+        })
+        input.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') renderResults(searchVerses(input.value))
+        })
+      }
+    })
+  </script>
+
+  <script>
+    // -----------------------------------------------------------------------
+    // Display — exposes window.displayVerseByReference, nextVerse, previousVerse
+    // These are called by companion_bridge.js when Companion sends commands.
+    // They update the dock UI and broadcast to browser_source.html.
+    // -----------------------------------------------------------------------
+
+    // BroadcastChannel names — must match browser_source.html exactly (Decision 15).
+    var displayChannel = new BroadcastChannel('obs-bible-companion-display')
+    var animChannel    = new BroadcastChannel('obs-bible-companion-anim')
+
+    // Track current position.
+    window.__currentReference  = null
+    window.__currentVerseIndex = -1
+    window.__overlayVisible    = false
+
+    function findVerseIndex (reference) {
+      var data = getBibleData()
+      var ref  = reference.toLowerCase()
+      for (var i = 0; i < data.length; i++) {
+        if (data[i].name.toLowerCase() === ref) return i
+      }
+      return -1
+    }
+
+    function applyVerse (idx) {
+      var data = getBibleData()
+      if (idx < 0 || idx >= data.length) return
+      var v = data[idx]
+
+      window.__currentVerseIndex = idx
+      window.__currentReference  = v.name
+
+      // Update dock UI
+      var refEl  = document.getElementById('current-reference')
+      var textEl = document.getElementById('current-text')
+      if (refEl)  refEl.textContent  = v.name
+      if (textEl) textEl.textContent = v.verse
+
+      // Broadcast to browser_source.html
+      displayChannel.postMessage({ reference: v.name, verse: v.verse })
+    }
+
+    window.displayVerseByReference = function (reference) {
+      var idx = findVerseIndex(reference)
+      if (idx === -1) {
+        console.warn('[OBS Bible] Reference not found: ' + reference)
+        return
+      }
+      applyVerse(idx)
+    }
+
+    window.nextVerse = function () {
+      var data = getBibleData()
+      var next = window.__currentVerseIndex + 1
+      if (next < data.length) applyVerse(next)
+    }
+
+    window.previousVerse = function () {
+      var prev = window.__currentVerseIndex - 1
+      if (prev >= 0) applyVerse(prev)
+    }
+
+    window.showOverlay = function () {
+      window.__overlayVisible = true
+      animChannel.postMessage({ action: 'show' })
+      var btn = document.getElementById('overlay-btn')
+      if (btn) btn.textContent = 'Hide'
+    }
+
+    window.hideOverlay = function () {
+      window.__overlayVisible = false
+      animChannel.postMessage({ action: 'hide' })
+      var btn = document.getElementById('overlay-btn')
+      if (btn) btn.textContent = 'Show'
+    }
+
+    // Wire up nav buttons once DOM is ready
+    document.addEventListener('DOMContentLoaded', function () {
+      var prevBtn    = document.getElementById('prev-btn')
+      var nextBtn    = document.getElementById('next-btn')
+      var overlayBtn = document.getElementById('overlay-btn')
+
+      if (prevBtn)    prevBtn.addEventListener('click', window.previousVerse)
+      if (nextBtn)    nextBtn.addEventListener('click', window.nextVerse)
+      if (overlayBtn) overlayBtn.addEventListener('click', function () {
+        if (window.__overlayVisible) window.hideOverlay()
+        else window.showOverlay()
+      })
+
+      populateTranslationSelect()
+      document.getElementById('translation-select')
+        .addEventListener('change', function (e) {
+          setTranslation(e.target.value)
+        })
+    })
+  </script>
+
+  <!-- ==================================================================
+       COMPANION BRIDGE
+       Loaded last so all window.* APIs above are defined before the
+       bridge tries to call them. Connects to RelayServer, receives
+       commands from Companion, reports state back.
+       ================================================================== -->
+  <script src="js/companion_bridge.js"></script>
+
 </body>
 </html>

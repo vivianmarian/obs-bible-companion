@@ -39,7 +39,7 @@
       var data = event.data
       if (!data || typeof data.verse !== 'string') return
       verseText.textContent = data.verse
-      verseRef.textContent  = data.name || ''
+      verseRef.textContent  = data.reference || ''
       verseCard.style.animation = 'none'
       void verseCard.offsetWidth
       verseCard.style.animation = ''
@@ -47,8 +47,16 @@
 
     animChannel.addEventListener('message', function (event) {
       var data = event.data
-      if (!data || typeof data.display !== 'string') return
-      displayRoot.style.display = data.display
+
+      if (!data || typeof data.action !== 'string') return
+
+      if (data.action === 'show') {
+      displayRoot.style.display = 'flex'
+      }
+
+      if (data.action === 'hide') {
+      displayRoot.style.display = 'none'
+      }
     })
   </script>
 </body>

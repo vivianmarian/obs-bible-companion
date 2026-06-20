@@ -1,195 +1,268 @@
-'use strict'
-
-/**
- * OBS Bible Companion Bridge
- *
- * Runs inside the OBS Custom Browser Dock (index.html).
- * Connects to the RelayServer via WebSocket and dispatches commands
- * to the window API exposed by display.js.
- *
- * Port is read from <meta name="obs-bible-port"> in index.html.
- * Falls back to 8765 if the tag is missing or malformed.
- */
-
 ;(function () {
-  const PREFIX = '[OBS Bible Bridge]'
-
-  // ── Port configuration ───────────────────────────────────────────────────
-  function getPort() {
-    const meta = document.querySelector('meta[name="obs-bible-port"]')
-    if (meta) {
-      const val = parseInt(meta.getAttribute('content'), 10)
-      if (!isNaN(val) && val > 0 && val < 65536) return val
-    }
-    return 8765
-  }
-
-  const PORT = getPort()
-  const RELAY_URL = `ws://127.0.0.1:${PORT}?client=browser`
-
-  // ── Reconnect configuration ──────────────────────────────────────────────
-  const INITIAL_DELAY_MS = 3000
-  const MAX_DELAY_MS = 30000
-
-  let socket = null
-  let reconnectDelay = INITIAL_DELAY_MS
-  let reconnectTimer = null
-
-  // ── State sender ─────────────────────────────────────────────────────────
+  'use strict'
 
   /**
-   * Sends current plugin state back to Companion via the relay.
-   * Called immediately on connect and after every successful command.
-   */
-  function sendState() {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return
-
-    let currentTranslation = 'KJV'
-    try {
-      currentTranslation = localStorage.getItem('obs_bible_translation') ?? 'KJV'
-    } catch (_) {}
-
-    const state = {
-      connected: true,
-      currentReference: window.__currentReference ?? '',
-      currentTranslation,
-      overlayVisible: window.__overlayVisible ?? false,
-      currentVerseIndex: window.__currentVerseIndex ?? -1,
-    }
-    socket.send(JSON.stringify(state))
-  }
-
-  // ── Command dispatcher ────────────────────────────────────────────────────
-
-  /**
-   * Dispatches a validated command object to the appropriate window API function.
+   * companion_bridge.js
    *
-   * @param {{ action: string, [key: string]: unknown }} cmd
+   * Loaded by index.html as a plain <script> tag (no type="module").
+   * Runs inside the OBS Custom Browser Dock for the entire OBS session.
+   *
+   * Responsibilities:
+   *   1. Connect to the RelayServer via WebSocket (?client=browser).
+   *   2. Receive commands from Companion (displayVerse, nextVerse,
+   *      previousVerse, showOverlay, hideOverlay, changeTranslation).
+   *   3. Execute those commands by calling window.* functions exposed
+   *      by index.html, which then broadcast to browser_source.html
+   *      via BroadcastChannel.
+   *   4. Send state updates back to Companion whenever the displayed
+   *      verse changes (so Companion variables stay in sync).
+   *   5. Reconnect automatically if the WebSocket closes.
+   *
+   * Architectural notes (see master prompt Decisions 13, 14, 15, 22, 29):
+   *   - Plain IIFE — no ES6 import/export.
+   *   - No fetch() calls.
+   *   - BroadcastChannel is NOT used here — that is index.html's job.
+   *     This file only speaks WebSocket.
+   *   - Port is read from window.OBS_BIBLE_PORT if set, otherwise 8765.
+   *   - CRITICAL (Decision 29): OBS's CEF WebSocket implementation may
+   *     deliver text frames as a Blob object instead of a string. Always
+   *     check for Blob and convert via .text() before parsing — never
+   *     discard non-string event.data, or messages will be silently lost
+   *     with zero error trace.
    */
-  async function dispatch(cmd) {
-    const { action } = cmd
 
-    switch (action) {
-      case 'displayVerse':
-        if (typeof window.displayVerseByReference === 'function') {
-          window.displayVerseByReference(cmd.reference)
-        } else {
-          console.warn(PREFIX, 'displayVerseByReference not available on window')
-        }
-        break
+  // ---------------------------------------------------------------------------
+  // Config
+  // ---------------------------------------------------------------------------
 
-      case 'nextVerse':
-        if (typeof window.nextVerse === 'function') {
-          window.nextVerse()
-        }
-        break
+  var PORT    = (window.OBS_BIBLE_PORT || 8765)
+  var HOST    = '127.0.0.1'
+  var WS_URL  = 'ws://' + HOST + ':' + PORT + '?client=browser'
 
-      case 'previousVerse':
-        if (typeof window.previousVerse === 'function') {
-          window.previousVerse()
-        }
-        break
+  // Reconnect delays: start at 3 s, cap at 30 s (exponential back-off).
+  var RECONNECT_INITIAL_MS = 3000
+  var RECONNECT_MAX_MS     = 30000
 
-      case 'show':
-        if (typeof window.showOverlay === 'function') {
-          window.showOverlay()
-        }
-        break
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
 
-      case 'hide':
-        if (typeof window.hideOverlay === 'function') {
-          window.hideOverlay()
-        }
-        break
+  var ws               = null
+  var reconnectDelay   = RECONNECT_INITIAL_MS
+  var reconnectTimer   = null
+  var destroyed        = false   // set true when OBS unloads the dock
 
-      case 'toggleOverlay':
-        if (typeof window.toggleOverlay === 'function') {
-          window.toggleOverlay()
-        }
-        break
+  // ---------------------------------------------------------------------------
+  // Logging helpers
+  // ---------------------------------------------------------------------------
 
-      case 'changeTranslation':
-        if (typeof window.changeTranslation === 'function') {
-          await window.changeTranslation(cmd.translation)
-        }
-        break
-
-      default:
-        console.warn(PREFIX, `Unknown action: "${action}" — ignoring`)
-        return // do not send state for unknown actions
-    }
-
-    sendState()
+  function log (msg) {
+    console.log('[companion_bridge] ' + msg)
   }
 
-  // ── WebSocket lifecycle ───────────────────────────────────────────────────
+  function warn (msg) {
+    console.warn('[companion_bridge] ' + msg)
+  }
 
-  function connect() {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
+  // ---------------------------------------------------------------------------
+  // State reporting — send current plugin state to Companion via WebSocket
+  // ---------------------------------------------------------------------------
+
+  function sendState () {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+    var state = {
+      connected:          true,
+      currentReference:   window.__currentReference   || null,
+      currentTranslation: window.__currentTranslation || 'KJV',
+      overlayVisible:     window.__overlayVisible     || false,
+      currentVerseIndex:  (typeof window.__currentVerseIndex === 'number')
+                            ? window.__currentVerseIndex
+                            : -1,
     }
 
     try {
-      socket = new WebSocket(RELAY_URL)
+      ws.send(JSON.stringify(state))
     } catch (err) {
-      console.error(PREFIX, 'Failed to create WebSocket:', err)
-      scheduleReconnect()
+      warn('Failed to send state: ' + err.message)
+    }
+  }
+
+  function sendDisconnected () {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    try {
+      ws.send(JSON.stringify({ connected: false }))
+    } catch (_) { /* ignore — socket may already be closing */ }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Command dispatch — called when a message arrives from Companion
+  // ---------------------------------------------------------------------------
+
+  function dispatch (msg) {
+    var type = msg.type
+
+    if (type === 'displayVerse') {
+      if (typeof msg.reference !== 'string') {
+        warn('displayVerse: missing reference field')
+        return
+      }
+      if (typeof window.displayVerseByReference !== 'function') {
+        warn('displayVerseByReference is not available on window yet')
+        return
+      }
+      window.displayVerseByReference(msg.reference)
+      setTimeout(sendState, 0)
+
+    } else if (type === 'nextVerse') {
+      if (typeof window.nextVerse !== 'function') {
+        warn('nextVerse is not available on window yet')
+        return
+      }
+      window.nextVerse()
+      setTimeout(sendState, 0)
+
+    } else if (type === 'previousVerse') {
+      if (typeof window.previousVerse !== 'function') {
+        warn('previousVerse is not available on window yet')
+        return
+      }
+      window.previousVerse()
+      setTimeout(sendState, 0)
+
+    } else if (type === 'showOverlay') {
+      if (typeof window.showOverlay !== 'function') {
+        warn('showOverlay is not available on window yet')
+        return
+      }
+      window.showOverlay()
+      setTimeout(sendState, 0)
+
+    } else if (type === 'hideOverlay') {
+      if (typeof window.hideOverlay !== 'function') {
+        warn('hideOverlay is not available on window yet')
+        return
+      }
+      window.hideOverlay()
+      setTimeout(sendState, 0)
+
+    } else if (type === 'changeTranslation') {
+      if (typeof msg.translation !== 'string') {
+        warn('changeTranslation: missing translation field')
+        return
+      }
+      if (typeof window.changeTranslation !== 'function') {
+        warn('changeTranslation is not available on window yet')
+        return
+      }
+      window.changeTranslation(msg.translation)
+      setTimeout(sendState, 0)
+
+    } else if (type === 'getState') {
+      sendState()
+
+    } else {
+      warn('Unknown command type: ' + JSON.stringify(type))
+    }
+  }
+
+  /**
+   * Parses a raw text message and dispatches it.
+   * Separated from ws.onmessage so it can be called either synchronously
+   * (string data) or asynchronously after Blob-to-text conversion.
+   */
+  function handleIncomingMessage (raw) {
+    var msg
+    try {
+      msg = JSON.parse(raw)
+    } catch (err) {
+      warn('Received non-JSON message: ' + raw)
       return
     }
-
-    socket.addEventListener('open', () => {
-      console.log(PREFIX, `Connected to relay on port ${PORT}`)
-      reconnectDelay = INITIAL_DELAY_MS
-      sendState()
-    })
-
-    socket.addEventListener('message', (event) => {
-      let cmd
-      try {
-        cmd = JSON.parse(event.data)
-      } catch (err) {
-        console.warn(PREFIX, 'Received non-JSON message:', event.data)
-        return
-      }
-
-      if (!cmd || typeof cmd.action !== 'string') {
-        console.warn(PREFIX, 'Received message without "action" field:', cmd)
-        return
-      }
-
-      dispatch(cmd).catch((err) => {
-        console.error(PREFIX, 'Dispatch error:', err)
-      })
-    })
-
-    socket.addEventListener('close', (event) => {
-      console.log(PREFIX, `Disconnected (code ${event.code}), retrying in ${reconnectDelay / 1000}s`)
-      socket = null
-      scheduleReconnect()
-    })
-
-    socket.addEventListener('error', (event) => {
-      // error is always followed by close — let the close handler schedule reconnect
-      console.warn(PREFIX, 'WebSocket error:', event)
-    })
+    dispatch(msg)
   }
 
-  function scheduleReconnect() {
-    reconnectTimer = setTimeout(() => {
+  // ---------------------------------------------------------------------------
+  // WebSocket lifecycle
+  // ---------------------------------------------------------------------------
+
+  function connect () {
+    if (destroyed) return
+
+    log('Connecting to ' + WS_URL)
+    ws = new WebSocket(WS_URL)
+
+    ws.onopen = function () {
+      log('Connected.')
+      reconnectDelay = RECONNECT_INITIAL_MS
+      sendState()
+    }
+
+    ws.onmessage = function (event) {
+      // CRITICAL (Decision 29): OBS CEF may deliver text frames as a Blob
+      // instead of a string. Convert Blob to text before parsing — never
+      // silently discard non-string data, or messages vanish with zero trace.
+      if (event.data instanceof Blob) {
+        event.data.text().then(function (text) {
+          handleIncomingMessage(text)
+        }).catch(function (err) {
+          warn('Failed to read Blob message: ' + err.message)
+        })
+        return
+      }
+
+      handleIncomingMessage(event.data)
+    }
+
+    ws.onerror = function (event) {
+      warn('WebSocket error.')
+    }
+
+    ws.onclose = function () {
+      log('Connection closed.')
+      sendDisconnected()
+      ws = null
+      scheduleReconnect()
+    }
+  }
+
+  function scheduleReconnect () {
+    if (destroyed) return
+    log('Reconnecting in ' + reconnectDelay + 'ms...')
+    reconnectTimer = setTimeout(function () {
       reconnectTimer = null
       connect()
     }, reconnectDelay)
-
-    // Exponential backoff, capped at MAX_DELAY_MS
-    reconnectDelay = Math.min(reconnectDelay * 2, MAX_DELAY_MS)
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS)
   }
 
-  // ── Boot ──────────────────────────────────────────────────────────────────
-  // Wait for DOMContentLoaded so index.html scripts have run and window API is registered
+  function destroy () {
+    destroyed = true
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    if (ws) {
+      ws.onclose = null
+      ws.close()
+      ws = null
+    }
+    log('Bridge destroyed.')
+  }
+
+  // ---------------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------------
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', connect)
   } else {
     connect()
   }
-})()
+
+  window.addEventListener('beforeunload', destroy)
+
+  window.__bridgeDestroy   = destroy
+  window.__bridgeSendState = sendState
+
+}())
