@@ -6,28 +6,23 @@
  *
  * Coverage exclusions:
  *
- *  - src/index.ts          — Companion module entry point. Extends
- *                            InstanceBase and calls runEntrypoint(), both
- *                            of which require a live Companion host process
- *                            to fully initialize. Not unit-testable in
- *                            isolation; verified manually by loading the
- *                            module into a real Companion instance (Sprint 6/7).
- *  - RelayServer.ts        — WebSocket server; integration-tested end-to-end
- *                            in Sprint 5. Its test suite fails to load in ESM
- *                            mode due to a CommonJS require.main guard
- *                            historically present in early versions; even
- *                            with that fixed (Decision 24), it is kept
- *                            excluded since its true behavior is best
- *                            verified via live socket integration tests
- *                            rather than coverage percentage.
- *  - WebSocketClient.ts    — WebSocket client; integration-tested alongside
- *                            RelayServer in Sprint 5.
+ *  - src/index.ts              — Companion module entry point. Extends
+ *                                InstanceBase and calls runEntrypoint(),
+ *                                both of which require a live Companion
+ *                                host process to fully initialize.
+ *                                Excluded since Sprint 6 (Decision 23).
  *
- *  src/companion/**       — NOT excluded as of Sprint 6. config.ts,
- *                            actions.ts, feedbacks.ts, and variables.ts are
- *                            all pure functions taking a fake instance
- *                            object and are fully unit-tested in
- *                            companion.test.ts.
+ *  - src/bridge/RelayServer.ts     — WebSocket server; integration-tested
+ *  - src/bridge/WebSocketClient.ts   end-to-end in Sprint 5. Excluded
+ *                                    since Sprint 3 (Decision 23).
+ *
+ * Everything else is included:
+ *  - src/companion/**         — pure functions, fully tested (Sprint 6)
+ *  - src/navigation/**        — NavigationEngine (Sprint 4) +
+ *                               NavigationController (Sprint 7), both
+ *                               fully tested with in-memory fixtures
+ *  - src/metadata/**          — MetadataGenerator (Sprint 3)
+ *  - src/config.ts            — shared config constants
  */
 
 export default {
@@ -58,9 +53,9 @@ export default {
   ],
   coverageThreshold: {
     global: {
-      lines: 80,
-      branches: 75,
-      functions: 80,
+      lines:      80,
+      branches:   75,
+      functions:  80,
       statements: 80,
     },
   },
