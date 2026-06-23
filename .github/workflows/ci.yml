@@ -1,0 +1,50 @@
+# ============================================================
+# OBS Bible Companion — CI
+#
+# Runs on every push and pull request to main.
+# Executes both test suites (project-a and project-b) and
+# fails the build if any test fails or coverage drops below
+# the configured thresholds.
+# ============================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate bible_structure.json
+        run: npm run generate:metadata --workspace=project-b
+
+      - name: Build project-a (inline bible data into index.html)
+        run: npm run build --workspace=project-a
+
+      - name: Run project-a tests
+        run: npm test --workspace=project-a
+
+      - name: Run project-b tests
+        run: npm test --workspace=project-b
