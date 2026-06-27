@@ -104,13 +104,15 @@ echo     Add a new connection and search for "OBS Bible"
 echo.
 echo  3. Open OBS Studio
 echo     Go to View ^> Docks ^> Custom Browser Docks
-echo     Add a dock pointing to:
+echo     Add a dock with this URL:
 echo.
-echo       %~dp0project-a\src\index.html
+echo       http://127.0.0.1:8766/index.html
 echo.
-echo  4. Add a Browser Source on your scene pointing to:
+echo  4. Add a Browser Source on your scene with this URL:
 echo.
-echo       %~dp0project-a\src\browser_source.html
+echo       http://127.0.0.1:8766/browser_source.html
+echo.
+echo       (The HTTP server starts automatically when Companion loads the module)
 echo.
 echo  Press any key to close this window.
 echo.

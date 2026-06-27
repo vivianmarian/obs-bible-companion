@@ -67,17 +67,14 @@ Click **+** and fill in:
 | Field | Value |
 |---|---|
 | Dock Name | OBS Bible Companion |
-| URL | Full path to `project-a\src\index.html` |
-
-**Windows example:**
-C:\Users\YourName\obs-bible-companion\project-a\src\index.html
-
-**Mac example:**
-/Users/YourName/obs-bible-companion/project-a/src/index.html
+| URL | `http://127.0.0.1:8766/index.html` |
 
 > **Important:** This MUST be a Custom Browser Dock — not a Browser Source.
 > Docks stay loaded across scene changes. A Browser Source would disconnect
 > the bridge whenever you switch scenes.
+>
+> The HTTP server starts automatically when Companion loads the OBS Bible module.
+> No file paths needed.
 
 ### Step 2 — Add the verse display to your scene
 
@@ -85,7 +82,7 @@ In OBS, on the scene where you want verses to appear:
 
 1. Click **+** in the Sources panel → **Browser**
 2. Name it "Bible Verse" (or anything you like)
-3. Check **Local file** and browse to `project-a\src\browser_source.html`
+3. Set the URL to `http://127.0.0.1:8766/browser_source.html` (uncheck Local file if checked)
 4. Set width and height to match your canvas (e.g. 1920 × 1080)
 5. Click OK
 
@@ -254,7 +251,7 @@ node test-show-overlay.js
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Companion shows connection error | Module not loaded or relay failed to start | Check Companion's module log for errors. Confirm Developer modules path points to the `project-b` folder. Re-run `setup.bat` / `setup.sh` if `dist/main.js` is missing. |
-| Dock shows blank page | `index.html` not built, or wrong file loaded | Re-run `setup.bat` / `setup.sh`, then reload the dock. Confirm the dock URL ends in `project-a\src\index.html`. |
+| Dock shows blank page | `index.html` not built, or wrong URL | Re-run `setup.bat` / `setup.sh`, then reload the dock. Confirm the dock URL is `http://127.0.0.1:8766/index.html`. |
 | Search returns no results | Bible data not inlined correctly | Re-run `setup.bat` / `setup.sh`, reload the dock. |
 | Verse appears in dock but not on scene | `browser_source.html` not added as Browser Source | Add `project-a\src\browser_source.html` to your scene. |
 | Overlay does not appear on video | Show Overlay not pressed | Press Show Overlay in Companion, or run `node test-show-overlay.js`. |
