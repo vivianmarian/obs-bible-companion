@@ -253,7 +253,7 @@ node test-show-overlay.js
 | Companion shows connection error | Module not loaded or relay failed to start | Check Companion's module log for errors. Confirm Developer modules path points to the `project-b` folder. Re-run `setup.bat` / `setup.sh` if `dist/main.js` is missing. |
 | Dock shows blank page | `index.html` not built, or wrong URL | Re-run `setup.bat` / `setup.sh`, then reload the dock. Confirm the dock URL is `http://127.0.0.1:8766/index.html`. |
 | Search returns no results | Bible data not inlined correctly | Re-run `setup.bat` / `setup.sh`, reload the dock. |
-| Verse appears in dock but not on scene | `browser_source.html` not added as Browser Source | Add `project-a\src\browser_source.html` to your scene. |
+| Verse appears in dock but not on scene | `browser_source.html` not added as Browser Source | Add a Browser Source in OBS with URL `http://127.0.0.1:8766/browser_source.html`. |
 | Overlay does not appear on video | Show Overlay not pressed | Press Show Overlay in Companion, or run `node test-show-overlay.js`. |
 | Port 8765 already in use | Another process using the port | Change the Relay Port in the Companion connection settings. Set `OBS_BIBLE_PORT` in the environment if starting the relay manually. |
 | `bible_structure.json` not found warning | Metadata not generated | Re-run `setup.bat` / `setup.sh`. |
