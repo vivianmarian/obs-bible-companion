@@ -1,14 +1,15 @@
 /**
  * index.ts
  *
- * Bitfocus Companion v3/v4 module entry point for OBS Bible Companion.
+ * Bitfocus Companion v4 module entry point for OBS Bible Companion.
  *
- * Sprint 10 addition over Sprint 7:
- *   - The RelayServer is now started automatically inside init() and stopped
- *     inside destroy(). The operator no longer needs to run start.bat / start.sh
- *     to launch the relay — it starts and stops with the Companion module.
- *   - Port conflict on relay startup sets the module status to ConnectionFailure
- *     with a clear message instead of crashing the process.
+ * Sprint 11 addition over Sprint 10:
+ *   - StaticServer is started in init() on port 8766 and stopped in destroy().
+ *   - This serves project-a/src/ at http://127.0.0.1:8766 so the operator
+ *     can load the OBS dock and browser source via HTTP URLs instead of
+ *     file:// paths.
+ *   - Both the dock (index.html) and browser source (browser_source.html)
+ *     are served from the same origin, ensuring BroadcastChannel works.
  */
 
 import {
@@ -23,7 +24,8 @@ import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
-import { RelayServer } from './bridge/RelayServer.js'
+import { RelayServer }  from './bridge/RelayServer.js'
+import { StaticServer } from './bridge/StaticServer.js'
 import { WebSocketClient } from './bridge/WebSocketClient.js'
 import {
   DEFAULT_BRIDGE_STATE,
@@ -35,7 +37,7 @@ import { getConfigFields }        from './companion/config.js'
 import { getActionDefinitions }   from './companion/actions.js'
 import { getFeedbackDefinitions } from './companion/feedbacks.js'
 import { getVariableDefinitions, getVariableValues } from './companion/variables.js'
-import { NavigationController, type NavPage, type NavButton } from './navigation/NavigationController.js'
+import { NavigationController, type NavPage } from './navigation/NavigationController.js'
 import type { BibleStructureData } from './navigation/BibleStructure.js'
 
 // ---------------------------------------------------------------------------
@@ -56,9 +58,10 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   public config: ModuleConfig = { relayHost: '127.0.0.1', relayPort: 8765 }
   public state:  BridgeState  = { ...DEFAULT_BRIDGE_STATE }
 
-  private relay:   RelayServer       | null = null
-  private client:  WebSocketClient   | null = null
-  private navCtrl: NavigationController | null = null
+  private relay:        RelayServer         | null = null
+  private staticServer: StaticServer        | null = null
+  private client:       WebSocketClient     | null = null
+  private navCtrl:      NavigationController | null = null
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -68,16 +71,15 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
     this.config = config
     this.updateStatus(InstanceStatus.Connecting)
 
-    // Register static feedbacks, variables (actions registered after nav init).
     this.setFeedbackDefinitions(getFeedbackDefinitions(this))
     this.setVariableDefinitions(getVariableDefinitions())
     this.setVariableValues(getVariableValues(this.state))
 
-    // Build navigation controller and merge nav + static actions.
     this.initNavController()
 
-    // Start the relay server embedded in this module process, then connect.
     await this.startRelay()
+    await this.startStaticServer()
+
     if (this.relay) {
       this.connectToRelay()
     }
@@ -96,6 +98,7 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   async destroy(): Promise<void> {
     this.disconnectFromRelay()
     await this.stopRelay()
+    await this.stopStaticServer()
   }
 
   getConfigFields(): SomeCompanionConfigField[] {
@@ -124,6 +127,31 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
     if (this.relay) {
       await this.relay.stop()
       this.relay = null
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Static HTTP server lifecycle
+  // -------------------------------------------------------------------------
+
+  private async startStaticServer(): Promise<void> {
+    this.staticServer = new StaticServer(8766)
+    try {
+      await this.staticServer.start()
+      this.log('info', 'StaticServer started on http://127.0.0.1:8766')
+    } catch (err) {
+      const msg = `StaticServer failed to start on port 8766: ${(err as Error).message}`
+      this.log('warn', msg)
+      this.log('warn', 'OBS dock/browser source must be loaded via file:// path instead')
+      this.staticServer = null
+      // Not fatal — module still works, just without HTTP serving
+    }
+  }
+
+  private async stopStaticServer(): Promise<void> {
+    if (this.staticServer) {
+      await this.staticServer.stop()
+      this.staticServer = null
     }
   }
 
