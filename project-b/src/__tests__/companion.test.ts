@@ -1,20 +1,19 @@
 /**
  * companion.test.ts
  *
- * Tests the pure, SDK-independent logic in the companion/ layer:
- *   - config field definitions
- *   - action definitions and their callback behavior
- *   - feedback definitions and their callback behavior
- *   - variable definitions and value mapping
+ * Tests the pure, SDK-independent logic in the companion/ layer.
  *
- * InstanceBase itself (from @companion-module/base) requires a live
- * Companion host process to fully initialize, so these tests use a
- * minimal fake instance object that satisfies only the interface surface
- * actions/feedbacks actually touch (sendCommand, state, log,
- * parseVariablesInString) rather than instantiating the real SDK class.
- * This keeps the tests fast, deterministic, and free of any network or
- * host dependency — consistent with how RelayServer.ts/WebSocketClient.ts
- * are excluded from coverage and tested separately (Decision 23).
+ * API 2.0 changes reflected here:
+ *   1. Action/feedback definitions can now be `false` (to disable them).
+ *      The type is now `false | CompanionActionDefinition`. The `!`
+ *      non-null assertion no longer narrows away `false`, so we must
+ *      add explicit type guards before accessing `.callback`.
+ *   2. parseVariablesInString moved from instance to context parameter.
+ *      The fake instance no longer needs this method; the fake context
+ *      object is passed as the second argument to callbacks instead.
+ *   3. CompanionVariableDefinition now has a generic type parameter.
+ *      Access variableId via `as any` cast to avoid the generic constraint
+ *      mismatch in the test environment.
  */
 
 import { describe, it, expect, jest, beforeEach } from '@jest/globals'
@@ -26,6 +25,7 @@ import { DEFAULT_BRIDGE_STATE, type BridgeState, type BridgeCommand } from '../c
 
 // ---------------------------------------------------------------------------
 // Fake instance — satisfies only what actions.ts/feedbacks.ts actually call
+// Note: parseVariablesInString removed — it now lives on the context object
 // ---------------------------------------------------------------------------
 
 function makeFakeInstance(stateOverrides: Partial<BridgeState> = {}) {
@@ -40,10 +40,24 @@ function makeFakeInstance(stateOverrides: Partial<BridgeState> = {}) {
     log: jest.fn((level: string, message: string) => {
       logs.push({ level, message })
     }),
-    parseVariablesInString: jest.fn(async (input: string) => input),
   }
 
   return { fake, sentCommands, logs }
+}
+
+// Fake context — provides parseVariablesInString as a pass-through
+const fakeContext = {
+  parseVariablesInString: async (input: string) => input,
+}
+
+// ---------------------------------------------------------------------------
+// Helper: narrow action/feedback away from `false` before calling callback
+// API 2.0: definitions can be `false` to disable them
+// ---------------------------------------------------------------------------
+
+function getCallback(definition: false | { callback: unknown }): Function {
+  if (definition === false) throw new Error('Definition is disabled (false)')
+  return definition.callback as Function
 }
 
 // ---------------------------------------------------------------------------
@@ -104,9 +118,9 @@ describe('getActionDefinitions', () => {
   it('displayVerse sends a displayVerse command with the given reference', async () => {
     const { fake, sentCommands } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.displayVerse!.callback(
-      { options: { reference: 'John 3:16' } } as any,
-      {} as any
+    await getCallback(actions.displayVerse!)(
+      { options: { reference: 'John 3:16' } },
+      fakeContext
     )
     expect(sentCommands).toEqual([{ type: 'displayVerse', reference: 'John 3:16' }])
   })
@@ -114,9 +128,9 @@ describe('getActionDefinitions', () => {
   it('displayVerse logs a warning and sends nothing when reference is empty', async () => {
     const { fake, sentCommands, logs } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.displayVerse!.callback(
-      { options: { reference: '   ' } } as any,
-      {} as any
+    await getCallback(actions.displayVerse!)(
+      { options: { reference: '   ' } },
+      fakeContext
     )
     expect(sentCommands).toEqual([])
     expect(logs[0].level).toBe('warn')
@@ -125,51 +139,51 @@ describe('getActionDefinitions', () => {
   it('nextVerse sends a nextVerse command', async () => {
     const { fake, sentCommands } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.nextVerse!.callback({ options: {} } as any, {} as any)
+    await getCallback(actions.nextVerse!)({ options: {} }, fakeContext)
     expect(sentCommands).toEqual([{ type: 'nextVerse' }])
   })
 
   it('previousVerse sends a previousVerse command', async () => {
     const { fake, sentCommands } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.previousVerse!.callback({ options: {} } as any, {} as any)
+    await getCallback(actions.previousVerse!)({ options: {} }, fakeContext)
     expect(sentCommands).toEqual([{ type: 'previousVerse' }])
   })
 
   it('showOverlay sends a showOverlay command', async () => {
     const { fake, sentCommands } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.showOverlay!.callback({ options: {} } as any, {} as any)
+    await getCallback(actions.showOverlay!)({ options: {} }, fakeContext)
     expect(sentCommands).toEqual([{ type: 'showOverlay' }])
   })
 
   it('hideOverlay sends a hideOverlay command', async () => {
     const { fake, sentCommands } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.hideOverlay!.callback({ options: {} } as any, {} as any)
+    await getCallback(actions.hideOverlay!)({ options: {} }, fakeContext)
     expect(sentCommands).toEqual([{ type: 'hideOverlay' }])
   })
 
   it('toggleOverlay sends showOverlay when currently hidden', async () => {
     const { fake, sentCommands } = makeFakeInstance({ overlayVisible: false })
     const actions = getActionDefinitions(fake as any)
-    await actions.toggleOverlay!.callback({ options: {} } as any, {} as any)
+    await getCallback(actions.toggleOverlay!)({ options: {} }, fakeContext)
     expect(sentCommands).toEqual([{ type: 'showOverlay' }])
   })
 
   it('toggleOverlay sends hideOverlay when currently visible', async () => {
     const { fake, sentCommands } = makeFakeInstance({ overlayVisible: true })
     const actions = getActionDefinitions(fake as any)
-    await actions.toggleOverlay!.callback({ options: {} } as any, {} as any)
+    await getCallback(actions.toggleOverlay!)({ options: {} }, fakeContext)
     expect(sentCommands).toEqual([{ type: 'hideOverlay' }])
   })
 
   it('changeTranslation sends a changeTranslation command', async () => {
     const { fake, sentCommands } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.changeTranslation!.callback(
-      { options: { translation: 'NIV' } } as any,
-      {} as any
+    await getCallback(actions.changeTranslation!)(
+      { options: { translation: 'NIV' } },
+      fakeContext
     )
     expect(sentCommands).toEqual([{ type: 'changeTranslation', translation: 'NIV' }])
   })
@@ -177,9 +191,9 @@ describe('getActionDefinitions', () => {
   it('changeTranslation logs a warning and sends nothing when translation is empty', async () => {
     const { fake, sentCommands, logs } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.changeTranslation!.callback(
-      { options: { translation: '' } } as any,
-      {} as any
+    await getCallback(actions.changeTranslation!)(
+      { options: { translation: '' } },
+      fakeContext
     )
     expect(sentCommands).toEqual([])
     expect(logs[0].level).toBe('warn')
@@ -188,7 +202,7 @@ describe('getActionDefinitions', () => {
   it('refreshState sends a getState command', async () => {
     const { fake, sentCommands } = makeFakeInstance()
     const actions = getActionDefinitions(fake as any)
-    await actions.refreshState!.callback({ options: {} } as any, {} as any)
+    await getCallback(actions.refreshState!)({ options: {} }, fakeContext)
     expect(sentCommands).toEqual([{ type: 'getState' }])
   })
 })
@@ -209,64 +223,68 @@ describe('getFeedbackDefinitions', () => {
   it('overlayIsVisible returns true when overlay is visible', () => {
     const { fake } = makeFakeInstance({ overlayVisible: true })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = (feedbacks.overlayIsVisible!.callback as any)({ options: {} })
+    const result = getCallback(feedbacks.overlayIsVisible!)({ options: {} }, fakeContext)
     expect(result).toBe(true)
   })
 
   it('overlayIsVisible returns false when overlay is hidden', () => {
     const { fake } = makeFakeInstance({ overlayVisible: false })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = (feedbacks.overlayIsVisible!.callback as any)({ options: {} })
+    const result = getCallback(feedbacks.overlayIsVisible!)({ options: {} }, fakeContext)
     expect(result).toBe(false)
   })
 
   it('bridgeConnected returns true (feedback active) when NOT connected', () => {
     const { fake } = makeFakeInstance({ connected: false })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = (feedbacks.bridgeConnected!.callback as any)({ options: {} })
+    const result = getCallback(feedbacks.bridgeConnected!)({ options: {} }, fakeContext)
     expect(result).toBe(true)
   })
 
   it('bridgeConnected returns false (feedback inactive) when connected', () => {
     const { fake } = makeFakeInstance({ connected: true })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = (feedbacks.bridgeConnected!.callback as any)({ options: {} })
+    const result = getCallback(feedbacks.bridgeConnected!)({ options: {} }, fakeContext)
     expect(result).toBe(false)
   })
 
   it('currentReferenceIs returns true when reference matches', async () => {
     const { fake } = makeFakeInstance({ currentReference: 'John 3:16' })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = await (feedbacks.currentReferenceIs!.callback as any)({
-      options: { reference: 'John 3:16' },
-    })
+    const result = await getCallback(feedbacks.currentReferenceIs!)(
+      { options: { reference: 'John 3:16' } },
+      fakeContext
+    )
     expect(result).toBe(true)
   })
 
   it('currentReferenceIs returns false when reference does not match', async () => {
     const { fake } = makeFakeInstance({ currentReference: 'Genesis 1:1' })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = await (feedbacks.currentReferenceIs!.callback as any)({
-      options: { reference: 'John 3:16' },
-    })
+    const result = await getCallback(feedbacks.currentReferenceIs!)(
+      { options: { reference: 'John 3:16' } },
+      fakeContext
+    )
     expect(result).toBe(false)
   })
 
   it('currentTranslationIs returns true when translation matches', () => {
     const { fake } = makeFakeInstance({ currentTranslation: 'NIV' })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = (feedbacks.currentTranslationIs!.callback as any)({
-      options: { translation: 'NIV' },
-    })
+    const result = getCallback(feedbacks.currentTranslationIs!)(
+      { options: { translation: 'NIV' } },
+      fakeContext
+    )
     expect(result).toBe(true)
   })
 
   it('currentTranslationIs returns false when translation does not match', () => {
     const { fake } = makeFakeInstance({ currentTranslation: 'KJV' })
     const feedbacks = getFeedbackDefinitions(fake as any)
-    const result = (feedbacks.currentTranslationIs!.callback as any)({
-      options: { translation: 'NIV' },
-    })
+    const result = getCallback(feedbacks.currentTranslationIs!)(
+      { options: { translation: 'NIV' } },
+      fakeContext
+    )
     expect(result).toBe(false)
   })
 })
@@ -278,7 +296,10 @@ describe('getFeedbackDefinitions', () => {
 describe('getVariableDefinitions', () => {
   it('defines all 5 expected variables', () => {
     const defs = getVariableDefinitions()
-    expect(defs.map(d => d.variableId).sort()).toEqual(
+    // Cast to any to access variableId — the generic type parameter
+    // in CompanionVariableDefinition<T> causes a TypeScript error in
+    // the test environment but the field exists at runtime in v2.0.x.
+    expect((defs as any[]).map((d: any) => d.variableId).sort()).toEqual(
       ['connected', 'overlay_visible', 'reference', 'translation', 'verse_index'].sort()
     )
   })

@@ -1,0 +1,27 @@
+{
+  "id": "obs-bible-companion",
+  "name": "OBS Bible Companion",
+  "shortname": "OBS Bible",
+  "description": "Display Bible verses in OBS Studio via Companion button presses. No typing required during a live church service.",
+  "version": "0.0.0",
+  "license": "MIT",
+  "manufacturer": "El-Bethel Church",
+  "products": [
+    "OBS Bible Companion"
+  ],
+  "keywords": [
+    "obs",
+    "bible",
+    "church",
+    "verse",
+    "worship",
+    "display",
+    "scripture"
+  ],
+  "runtime": {
+    "type": "node22",
+    "api": "nodejs-ipc",
+    "apiVersion": "0.0.0"
+  },
+  "entrypoint": "dist/main.js"
+}

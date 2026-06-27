@@ -1,17 +1,17 @@
 {
   "name": "obs-bible-companion",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Bitfocus Companion module for OBS Bible Plugin",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "companion-module-build",
     "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --config jest.config.js --coverage",
     "generate:metadata": "node --import=tsx/esm src/metadata/MetadataGenerator.ts",
     "start:relay": "node --import=tsx/esm src/bridge/RelayServer.ts"
   },
   "dependencies": {
-    "@companion-module/base": "~1.14.1",
+    "@companion-module/base": "~2.0.4",
     "ws": "^8.17.0"
   },
   "devDependencies": {

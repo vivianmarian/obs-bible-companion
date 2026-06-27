@@ -6,6 +6,9 @@
  * instance.state changes (wired up in index.ts's handleIncomingMessage
  * and onClose handlers), which re-evaluates every feedback below.
  *
+ * API 2.0 note: parseVariablesInString was removed from @companion-module/base
+ * ~2.0.x entirely. Option values are read directly from feedback.options.
+ *
  * Colors use simple, high-contrast choices suitable for a control surface
  * glanced at during a live service — green for "active/connected", red
  * for "disconnected/problem", default Companion colors otherwise.
@@ -67,10 +70,8 @@ export function getFeedbackDefinitions(
           useVariables: true,
         },
       ],
-      callback: async (feedback) => {
-        const reference = await instance.parseVariablesInString(
-          String(feedback.options.reference ?? '')
-        )
+      callback: (feedback) => {
+        const reference = String(feedback.options.reference ?? '').trim()
         return instance.state.currentReference === reference
       },
     },

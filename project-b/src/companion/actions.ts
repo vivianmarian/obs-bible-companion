@@ -2,14 +2,11 @@
  * companion/actions.ts
  *
  * Defines every action (button press behavior) the operator can assign
- * to a Companion button. Each action calls instance.sendCommand() with
- * the matching BridgeCommand, which the module's WebSocketClient sends
- * to the RelayServer — exactly the protocol proven working end-to-end
- * in Sprint 5.
+ * to a Companion button.
  *
- * Action IDs are kept stable and descriptive since operators' saved
- * button configurations reference them by ID — renaming an action ID
- * later breaks every existing button using it.
+ * API 2.0 note: parseVariablesInString was removed from both the instance
+ * class and the context parameter in @companion-module/base ~2.0.x.
+ * Option values are read directly from event.options as plain strings.
  */
 
 import type { CompanionActionDefinitions } from '@companion-module/base'
@@ -32,10 +29,8 @@ export function getActionDefinitions(
         },
       ],
       callback: async (event) => {
-        const reference = await instance.parseVariablesInString(
-          String(event.options.reference ?? '')
-        )
-        if (!reference.trim()) {
+        const reference = String(event.options.reference ?? '').trim()
+        if (!reference) {
           instance.log('warn', 'Display Verse action called with empty reference')
           return
         }
@@ -105,10 +100,8 @@ export function getActionDefinitions(
         },
       ],
       callback: async (event) => {
-        const translation = await instance.parseVariablesInString(
-          String(event.options.translation ?? '')
-        )
-        if (!translation.trim()) {
+        const translation = String(event.options.translation ?? '').trim()
+        if (!translation) {
           instance.log('warn', 'Change Translation action called with empty translation')
           return
         }

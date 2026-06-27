@@ -1,20 +1,14 @@
 /**
  * index.ts
  *
- * Bitfocus Companion v3 module entry point for OBS Bible Companion.
+ * Bitfocus Companion v3/v4 module entry point for OBS Bible Companion.
  *
- * Sprint 7 additions over Sprint 6:
- *   - Owns a NavigationController instance.
- *   - Rebuilds the Companion button grid (setActionDefinitions) whenever
- *     the NavigationController emits a new NavPage.
- *   - When the operator reaches READY_TO_DISPLAY, automatically sends
- *     a displayVerse command to the relay (no extra button press needed).
- *   - Loads bible_structure.json at startup to initialize the controller.
- *
- * The navigation action set and the static action set (showOverlay etc.)
- * are kept separate: navigation buttons are dynamic (rebuilt every page
- * transition), while the static actions (overlay, translation, etc.) are
- * registered once and never change.
+ * Sprint 10 addition over Sprint 7:
+ *   - The RelayServer is now started automatically inside init() and stopped
+ *     inside destroy(). The operator no longer needs to run start.bat / start.sh
+ *     to launch the relay — it starts and stops with the Companion module.
+ *   - Port conflict on relay startup sets the module status to ConnectionFailure
+ *     with a clear message instead of crashing the process.
  */
 
 import {
@@ -29,6 +23,7 @@ import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
+import { RelayServer } from './bridge/RelayServer.js'
 import { WebSocketClient } from './bridge/WebSocketClient.js'
 import {
   DEFAULT_BRIDGE_STATE,
@@ -36,8 +31,8 @@ import {
   type BridgeState,
   type BridgeCommand,
 } from './companion/types.js'
-import { getConfigFields }      from './companion/config.js'
-import { getActionDefinitions } from './companion/actions.js'
+import { getConfigFields }        from './companion/config.js'
+import { getActionDefinitions }   from './companion/actions.js'
 import { getFeedbackDefinitions } from './companion/feedbacks.js'
 import { getVariableDefinitions, getVariableValues } from './companion/variables.js'
 import { NavigationController, type NavPage, type NavButton } from './navigation/NavigationController.js'
@@ -47,9 +42,9 @@ import type { BibleStructureData } from './navigation/BibleStructure.js'
 // Colors for navigation buttons
 // ---------------------------------------------------------------------------
 
-const COLOR_OPTION_BG = combineRgb(0,   80,  160)   // blue — selectable option
-const COLOR_BACK_BG   = combineRgb(80,  80,  80)    // grey — back
-const COLOR_RESET_BG  = combineRgb(160, 40,  0)     // dark orange — reset/danger
+const COLOR_OPTION_BG = combineRgb(0,   80,  160)   // blue  — selectable option
+const COLOR_BACK_BG   = combineRgb(80,  80,  80)    // grey  — back
+const COLOR_RESET_BG  = combineRgb(160, 40,  0)     // orange — reset
 const COLOR_READY_BG  = combineRgb(0,   140, 0)     // green — ready to display
 const COLOR_WHITE     = combineRgb(255, 255, 255)
 
@@ -59,10 +54,11 @@ const COLOR_WHITE     = combineRgb(255, 255, 255)
 
 export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   public config: ModuleConfig = { relayHost: '127.0.0.1', relayPort: 8765 }
-  public state: BridgeState = { ...DEFAULT_BRIDGE_STATE }
+  public state:  BridgeState  = { ...DEFAULT_BRIDGE_STATE }
 
-  private client:     WebSocketClient | null = null
-  private navCtrl:    NavigationController | null = null
+  private relay:   RelayServer       | null = null
+  private client:  WebSocketClient   | null = null
+  private navCtrl: NavigationController | null = null
 
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -72,29 +68,63 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
     this.config = config
     this.updateStatus(InstanceStatus.Connecting)
 
-    // Register static (non-navigation) actions, feedbacks, variables.
+    // Register static feedbacks, variables (actions registered after nav init).
     this.setFeedbackDefinitions(getFeedbackDefinitions(this))
     this.setVariableDefinitions(getVariableDefinitions())
     this.setVariableValues(getVariableValues(this.state))
 
-    // Build the navigation controller, then merge nav + static actions.
+    // Build navigation controller and merge nav + static actions.
     this.initNavController()
 
-    this.connectToRelay()
+    // Start the relay server embedded in this module process, then connect.
+    await this.startRelay()
+    if (this.relay) {
+      this.connectToRelay()
+    }
   }
 
   async configUpdated(config: ModuleConfig): Promise<void> {
     this.config = config
     this.disconnectFromRelay()
-    this.connectToRelay()
+    await this.stopRelay()
+    await this.startRelay()
+    if (this.relay) {
+      this.connectToRelay()
+    }
   }
 
   async destroy(): Promise<void> {
     this.disconnectFromRelay()
+    await this.stopRelay()
   }
 
   getConfigFields(): SomeCompanionConfigField[] {
     return getConfigFields()
+  }
+
+  // -------------------------------------------------------------------------
+  // Relay lifecycle
+  // -------------------------------------------------------------------------
+
+  private async startRelay(): Promise<void> {
+    const port = this.config.relayPort ?? 8765
+    this.relay = new RelayServer(port)
+    try {
+      await this.relay.start()
+      this.log('info', `RelayServer started on port ${port}`)
+    } catch (err) {
+      const msg = `RelayServer failed to start on port ${port}: ${(err as Error).message}`
+      this.log('error', msg)
+      this.updateStatus(InstanceStatus.ConnectionFailure, msg)
+      this.relay = null
+    }
+  }
+
+  private async stopRelay(): Promise<void> {
+    if (this.relay) {
+      await this.relay.stop()
+      this.relay = null
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -115,7 +145,6 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
       },
     )
 
-    // Render initial page.
     this.rebuildActionDefinitions(this.navCtrl.getCurrentPage())
   }
 
@@ -130,7 +159,7 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
       return JSON.parse(raw) as BibleStructureData
     } catch (err) {
       this.log('warn', `Could not load bible_structure.json: ${(err as Error).message}`)
-      this.log('warn', 'Navigation buttons will be unavailable. Run: npm run generate:metadata --workspace=project-b')
+      this.log('warn', 'Navigation buttons unavailable. Run: npm run generate:metadata --workspace=project-b')
       return null
     }
   }
@@ -139,25 +168,17 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   // Dynamic action definitions
   // -------------------------------------------------------------------------
 
-  /**
-   * Rebuilds the full action definition set every time the nav page changes.
-   * Navigation buttons are dynamic; static buttons (overlay etc.) are merged in
-   * alongside them so operators can always access them from any page.
-   */
   private rebuildActionDefinitions(page: NavPage): void {
     const staticActions = getActionDefinitions(this)
     const navActions    = this.buildNavActions(page)
-
-    // Merge: static actions take precedence if IDs clash (they won't in practice).
     const merged: CompanionActionDefinitions = { ...navActions, ...staticActions }
     this.setActionDefinitions(merged)
   }
 
   private buildNavActions(page: NavPage): CompanionActionDefinitions {
     const actions: CompanionActionDefinitions = {}
-
     for (const button of page.buttons) {
-      const btn = button  // capture for closure
+      const btn = button
       actions[`nav_${btn.actionId}`] = {
         name: btn.label,
         options: [],
@@ -167,7 +188,6 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
         },
       }
     }
-
     return actions
   }
 
