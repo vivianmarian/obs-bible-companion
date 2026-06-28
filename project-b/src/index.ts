@@ -20,8 +20,7 @@ import {
   type CompanionActionDefinitions,
 } from '@companion-module/base'
 import { readFileSync } from 'fs'
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { resolve } from 'path'
 
 import { RelayServer }  from './bridge/RelayServer.js'
 import { StaticServer } from './bridge/StaticServer.js'
@@ -134,18 +133,18 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   // -------------------------------------------------------------------------
 
   private async startStaticServer(): Promise<void> {
-    this.staticServer = new StaticServer(8766)
-    try {
-      await this.staticServer.start()
-      this.log('info', 'StaticServer started on http://127.0.0.1:8766')
-    } catch (err) {
-      const msg = `StaticServer failed to start on port 8766: ${(err as Error).message}`
-      this.log('warn', msg)
-      this.log('warn', 'OBS dock/browser source must be loaded via file:// path instead')
-      this.staticServer = null
-      // Not fatal — module still works, just without HTTP serving
+      const projectAPath = resolve(process.cwd(), '../../project-a/src')
+      this.staticServer = new StaticServer(8766, projectAPath)
+      try {
+        await this.staticServer.start()
+        this.log('info', `StaticServer started on http://127.0.0.1:8766 serving ${projectAPath}`)
+      } catch (err) {
+        const msg = `StaticServer failed to start on port 8766: ${(err as Error).message}`
+        this.log('warn', msg)
+        this.log('warn', 'OBS dock/browser source must be loaded via file:// path instead')
+        this.staticServer = null
+      }
     }
-  }
 
   private async stopStaticServer(): Promise<void> {
     if (this.staticServer) {
@@ -177,10 +176,9 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
 
   private loadBibleStructure(): BibleStructureData | null {
     try {
-      const __dirname = dirname(fileURLToPath(import.meta.url))
       const structurePath = resolve(
-        __dirname,
-        '../../project-a/src/bible_data/bible_structure.json'
+      process.cwd(),
+      '../../project-a/src/bible_data/bible_structure.json'
       )
       const raw = readFileSync(structurePath, 'utf-8')
       return JSON.parse(raw) as BibleStructureData
@@ -222,35 +220,35 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   // Relay connection management
   // -------------------------------------------------------------------------
 
-  private connectToRelay(): void {
-    const url = `ws://${this.config.relayHost}:${this.config.relayPort}?client=companion`
+    private connectToRelay(): void {
+      const url = `ws://${this.config.relayHost}:${this.config.relayPort}?client=companion`
 
-    this.client = new WebSocketClient({
-      url,
-      onOpen: () => {
-        this.updateStatus(InstanceStatus.Ok)
-        this.sendCommand({ type: 'getState' })
-      },
-      onMessage: (raw: string) => {
-        this.handleIncomingMessage(raw)
-      },
-      onClose: () => {
-        this.updateStatus(InstanceStatus.Disconnected)
-        this.state = { ...DEFAULT_BRIDGE_STATE }
-        this.setVariableValues(getVariableValues(this.state))
-        this.checkFeedbacks()
-      },
-      onError: (err: Error) => {
-        this.updateStatus(InstanceStatus.ConnectionFailure, err.message)
-      },
-    })
+      this.client = new WebSocketClient({
+        url,
+        onMessage: (raw: string) => {
+          this.handleIncomingMessage(raw)
+        },
+        onStatusChange: (status) => {
+          if (status === 'connected') {
+            this.updateStatus(InstanceStatus.Ok)
+            this.sendCommand({ type: 'getState' })
+          } else if (status === 'disconnected') {
+            this.updateStatus(InstanceStatus.Disconnected)
+            this.state = { ...DEFAULT_BRIDGE_STATE }
+            this.setVariableValues(getVariableValues(this.state))
+            this.checkAllFeedbacks()
+          } else if (status === 'reconnecting') {
+            this.updateStatus(InstanceStatus.Connecting)
+          }
+        },
+      })
 
-    this.client.connect()
-  }
+      this.client.connect()
+    }
 
   private disconnectFromRelay(): void {
     if (this.client) {
-      this.client.disconnect()
+      this.client.destroy()
       this.client = null
     }
   }
@@ -295,7 +293,7 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   // -------------------------------------------------------------------------
 
   public sendCommand(command: BridgeCommand): void {
-    if (!this.client || !this.client.isOpen()) {
+    if (!this.client || this.client.getStatus() !== 'connected') {
       this.log('warn', `Cannot send command, not connected: ${JSON.stringify(command)}`)
       return
     }
