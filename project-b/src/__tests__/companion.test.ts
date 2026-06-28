@@ -296,12 +296,17 @@ describe('getFeedbackDefinitions', () => {
 describe('getVariableDefinitions', () => {
   it('defines all 5 expected variables', () => {
     const defs = getVariableDefinitions()
-    // Cast to any to access variableId — the generic type parameter
-    // in CompanionVariableDefinition<T> causes a TypeScript error in
-    // the test environment but the field exists at runtime in v2.0.x.
-    expect((defs as any[]).map((d: any) => d.variableId).sort()).toEqual(
+    expect(Object.keys(defs).sort()).toEqual(
       ['connected', 'overlay_visible', 'reference', 'translation', 'verse_index'].sort()
     )
+  })
+
+  it('each variable definition has a name string', () => {
+    const defs = getVariableDefinitions()
+    for (const [, def] of Object.entries(defs)) {
+      expect(typeof def.name).toBe('string')
+      expect(def.name.length).toBeGreaterThan(0)
+    }
   })
 })
 

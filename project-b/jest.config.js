@@ -45,6 +45,7 @@ export default {
     ],
   },
   testMatch: ['**/__tests__/**/*.test.ts'],
+  testPathIgnorePatterns: ['/node_modules/', '/obs-bible-companion/', '/pkg/'],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/index.ts',
