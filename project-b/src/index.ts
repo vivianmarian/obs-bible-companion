@@ -14,7 +14,6 @@
 
 import {
   InstanceBase,
-  runEntrypoint,
   InstanceStatus,
   combineRgb,
   type SomeCompanionConfigField,
@@ -304,4 +303,4 @@ export class ObsBibleCompanionInstance extends InstanceBase<ModuleConfig> {
   }
 }
 
-runEntrypoint(ObsBibleCompanionInstance, [])
+export default ObsBibleCompanionInstance

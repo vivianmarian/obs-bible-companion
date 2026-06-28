@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Bitfocus Companion module for OBS Bible Plugin",
   "type": "module",
-  "main": "dist/main.js",
+  "main": "src/index.ts",
   "scripts": {
     "build": "companion-module-build",
     "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --config jest.config.js --coverage",

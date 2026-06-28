@@ -1,10 +1,21 @@
 {
+  "$schema": "https://bitfocus.io/companion-module/manifest-schema.json",
+  "type": "connection",
   "id": "obs-bible-companion",
   "name": "OBS Bible Companion",
   "shortname": "OBS Bible",
   "description": "Display Bible verses in OBS Studio via Companion button presses. No typing required during a live church service.",
   "version": "0.0.0",
   "license": "MIT",
+  "repository": "https://github.com/vivianmarian/obs-bible-companion",
+  "bugs": "https://github.com/vivianmarian/obs-bible-companion/issues",
+  "maintainers": [
+    {
+      "name": "El-Bethel Church",
+      "github": "vivianmarian"
+    }
+  ],
+  "legacyIds": [],
   "manufacturer": "El-Bethel Church",
   "products": [
     "OBS Bible Companion"
@@ -21,7 +32,7 @@
   "runtime": {
     "type": "node22",
     "api": "nodejs-ipc",
-    "apiVersion": "0.0.0"
-  },
-  "entrypoint": "dist/main.js"
+    "apiVersion": "0.0.0",
+    "entrypoint": "dist/main.js"
+  }
 }
